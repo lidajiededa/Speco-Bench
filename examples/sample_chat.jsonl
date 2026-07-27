@@ -1,0 +1,4 @@
+{"messages":[{"role":"user","content":"请用三句话解释什么是投机解码。"}],"max_tokens":128,"metadata":{"category":"chinese"}}
+{"messages":[{"role":"user","content":"Write a Python function that checks whether a string is a palindrome."}],"max_tokens":256,"metadata":{"category":"code"}}
+{"messages":[{"role":"user","content":"Solve step by step: If 3x + 5 = 26, what is x?"}],"max_tokens":128,"metadata":{"category":"math"}}
+
