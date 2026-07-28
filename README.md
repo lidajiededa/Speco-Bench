@@ -91,6 +91,32 @@ Hugging Face 名称或本地路径，可另外传入 `--tokenizer /path/to/token
 使用 `--endpoint-type completions`；chat 端点还会由服务端加入 chat
 template token，因此服务端统计的总输入 token 会高于随机 prompt 本身。
 
+## 多数据集并发矩阵
+
+矩阵脚本可一次输入多个数据集和多个并发数，并运行它们的笛卡尔积：
+
+```bash
+python3 scripts/benchmark_matrix.py \
+  --base-url http://127.0.0.1:8000 \
+  --model glm52 \
+  --datasets gsm8k math500 humaneval mbpp mt_bench \
+  --concurrencies 1 4 8 16 \
+  --num-prompts 100 \
+  --max-tokens 1024 \
+  --output-dir results/matrix
+```
+
+安装项目后也可把第一行换成 `speco-bench-matrix`。数据集和并发数均支持
+逗号写法，例如 `--datasets gsm8k,math500 --concurrencies 1,4,8`。
+数据集短名默认解析为 `dataset/<name>/question.jsonl`，也可以直接传入
+JSON/JSONL 文件路径。
+
+汇总结果会持续写入 `results/matrix/matrix.csv`。每个组合的完整
+`summary.json` 和 `requests.jsonl` 分别保存在
+`results/matrix/<dataset>/concurrency-<N>/`。CSV 包含请求吞吐、输出及
+总 token 吞吐、TTFT/TPOT/E2E 分位数、投机接受率和错误信息。某个组合
+失败时默认记录错误后继续；传入 `--fail-fast` 可立即停止。
+
 ## 运行压测
 
 ```bash

@@ -21,6 +21,7 @@ random = [
 
 [project.scripts]
 speco-bench = "speco_bench.cli:main"
+speco-bench-matrix = "speco_bench.matrix:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
