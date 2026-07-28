@@ -170,7 +170,9 @@ speco-bench run \
 
 ## 指标口径
 
-- `TTFT = 第一个有效文本增量到达时间 - 请求发出时间`
+- `TTFT = 第一个有效文本增量到达时间 - 请求发出时间`。有效文本包括
+  `content`、vLLM 当前使用的 `reasoning`，以及兼容旧服务的
+  `reasoning_content`
 - `TPOT = (端到端耗时 - TTFT) / (输出 Token 数 - 1)`
 - `请求吞吐 = 成功请求数 / 正式压测时长`
 - `输出吞吐 = 成功请求输出 Token 总数 / 正式压测时长`
@@ -178,7 +180,10 @@ speco-bench run \
 - `平均接受长度 = 1 + accepted draft tokens / draft rounds`
 - `位置 i 接受率 = position i accepted tokens / draft rounds`
 
-客户端请求 `stream_options.include_usage=true`，优先采用服务端返回的 token 数。服务不返回 streaming usage 时会退回按非空流式 chunk 计数，并在结果中产生警告；该退回值不应视为精确 token 数。
+客户端请求 `stream_options.include_usage=true`，优先采用服务端返回的 token 数
+（包括 reasoning parser 产生的推理 token）。服务不返回 streaming usage 时会退回
+按非空的正文或推理流式 chunk 计数，并在结果中产生警告；该退回值不应视为精确
+token 数。
 
 投机指标取正式压测前后的 `/metrics` counter 增量。压测期间不要让其他客户端访问同一服务，否则其请求也会被计入。
 

@@ -24,14 +24,36 @@ class ServiceIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 headers={"Content-Type": "text/event-stream"},
             )
             await response.prepare(request)
-            events = [
-                {"choices": [{"delta": {"content": "hello"}, "finish_reason": None}]},
-                {"choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]},
-                {
-                    "choices": [],
-                    "usage": {"prompt_tokens": 4, "completion_tokens": 2},
-                },
-            ]
+            if payload.get("mock_reasoning_without_usage"):
+                events = [
+                    {
+                        "choices": [
+                            {"delta": {"reasoning": "think"}, "finish_reason": None}
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {"delta": {"reasoning": " more"}, "finish_reason": "stop"}
+                        ]
+                    },
+                ]
+            else:
+                events = [
+                    {
+                        "choices": [
+                            {"delta": {"content": "hello"}, "finish_reason": None}
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {"delta": {"content": " world"}, "finish_reason": "stop"}
+                        ]
+                    },
+                    {
+                        "choices": [],
+                        "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+                    },
+                ]
             for event in events:
                 await response.write(f"data: {json.dumps(event)}\n\n".encode())
             await response.write(b"data: [DONE]\n\n")
@@ -91,7 +113,32 @@ class ServiceIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(report.spec_decode.position_acceptance_rates, [1.0])
             self.assertFalse(report.warnings)
 
+    async def test_reasoning_stream_counts_as_generated_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = Path(directory) / "data.jsonl"
+            dataset.write_text(
+                '{"messages":[{"role":"user","content":"hi"}],"max_tokens":2}\n',
+                encoding="utf-8",
+            )
+            config = BenchmarkConfig(
+                base_url=self.base_url,
+                model="mock-model",
+                dataset_path=dataset,
+                output_dir=Path(directory) / "results",
+                num_prompts=1,
+                warmup_requests=0,
+                extra_body={"mock_reasoning_without_usage": True},
+            )
+
+            report = await BenchmarkService().run(config)
+
+            self.assertEqual(report.summary["successful_requests"], 1)
+            self.assertEqual(report.summary["total_output_tokens"], 2)
+            self.assertEqual(report.requests[0].generated_text, "think more")
+            self.assertEqual(report.requests[0].token_count_source, "stream_chunks")
+            self.assertGreater(report.requests[0].ttft_ms, 0)
+            self.assertTrue(report.warnings)
+
 
 if __name__ == "__main__":
     unittest.main()
-

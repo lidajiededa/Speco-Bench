@@ -18,11 +18,21 @@ def _extract_text_delta(payload: dict[str, Any]) -> tuple[str, str | None]:
     finish_reason = choice.get("finish_reason")
     if "delta" in choice:
         delta = choice.get("delta") or {}
-        for key in ("content", "reasoning_content"):
-            value = delta.get(key)
-            if isinstance(value, str) and value:
-                return value, finish_reason
-        return "", finish_reason
+        if not isinstance(delta, dict):
+            return "", finish_reason
+
+        # vLLM uses "reasoning"; older releases and compatible servers may
+        # still expose the same stream as "reasoning_content".
+        reasoning = delta.get("reasoning")
+        if not isinstance(reasoning, str) or not reasoning:
+            reasoning = delta.get("reasoning_content")
+        content = delta.get("content")
+        parts = [
+            value
+            for value in (reasoning, content)
+            if isinstance(value, str) and value
+        ]
+        return "".join(parts), finish_reason
     value = choice.get("text")
     return (value if isinstance(value, str) else ""), finish_reason
 
