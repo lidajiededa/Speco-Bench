@@ -30,6 +30,7 @@ CSV_FIELDS = [
     "dataset",
     "dataset_path",
     "concurrency",
+    "requested_num_prompts",
     "total_requests",
     "successful_requests",
     "failed_requests",
@@ -97,10 +98,35 @@ def parse_concurrencies(values: Sequence[str]) -> list[int]:
             raise ValueError(f"invalid concurrency: {value}") from exc
         if concurrency < 1:
             raise ValueError("concurrency values must be at least 1")
-        if concurrency not in parsed:
-            parsed.append(concurrency)
+        if concurrency in parsed:
+            raise ValueError(f"duplicate concurrency value: {concurrency}")
+        parsed.append(concurrency)
     if not parsed:
         raise ValueError("at least one concurrency value is required")
+    return parsed
+
+
+def parse_num_prompts(
+    values: Sequence[str] | None,
+    *,
+    expected_count: int,
+) -> list[int | None]:
+    if values is None:
+        return [None] * expected_count
+    parsed: list[int] = []
+    for value in _split_values(values):
+        try:
+            num_prompts = int(value)
+        except ValueError as exc:
+            raise ValueError(f"invalid num-prompts value: {value}") from exc
+        if num_prompts < 1:
+            raise ValueError("num-prompts values must be at least 1")
+        parsed.append(num_prompts)
+    if len(parsed) != expected_count:
+        raise ValueError(
+            "num-prompts must contain exactly one value per concurrency: "
+            f"expected {expected_count}, got {len(parsed)}"
+        )
     return parsed
 
 
@@ -140,6 +166,7 @@ def report_to_csv_row(
     dataset: DatasetSpec,
     report: BenchmarkReport,
     *,
+    requested_num_prompts: int | None,
     summary_path: Path,
     requests_path: Path,
 ) -> dict[str, Any]:
@@ -153,6 +180,9 @@ def report_to_csv_row(
         "dataset": dataset.name,
         "dataset_path": str(dataset.path),
         "concurrency": summary["concurrency"],
+        "requested_num_prompts": (
+            requested_num_prompts if requested_num_prompts is not None else "all"
+        ),
         "total_requests": summary["total_requests"],
         "successful_requests": summary["successful_requests"],
         "failed_requests": summary["failed_requests"],
@@ -186,6 +216,7 @@ def report_to_csv_row(
 def _error_row(
     dataset: DatasetSpec,
     concurrency: int,
+    requested_num_prompts: int | None,
     error: Exception,
 ) -> dict[str, Any]:
     row = {field: "" for field in CSV_FIELDS}
@@ -194,6 +225,11 @@ def _error_row(
             "dataset": dataset.name,
             "dataset_path": str(dataset.path),
             "concurrency": concurrency,
+            "requested_num_prompts": (
+                requested_num_prompts
+                if requested_num_prompts is not None
+                else "all"
+            ),
             "error": f"{type(error).__name__}: {error}",
         }
     )
@@ -217,23 +253,30 @@ def _slug(value: str) -> str:
 async def run_matrix(args: argparse.Namespace) -> int:
     datasets = resolve_datasets(args.datasets, args.dataset_root)
     concurrencies = parse_concurrencies(args.concurrencies)
+    num_prompts_values = parse_num_prompts(
+        args.num_prompts,
+        expected_count=len(concurrencies),
+    )
+    load_shapes = list(zip(concurrencies, num_prompts_values))
     csv_path = args.csv_file or args.output_dir / "matrix.csv"
     rows: list[dict[str, Any]] = []
     had_errors = False
-    total_runs = len(datasets) * len(concurrencies)
+    total_runs = len(datasets) * len(load_shapes)
     run_number = 0
 
     for dataset in datasets:
-        for concurrency in concurrencies:
+        for concurrency, num_prompts in load_shapes:
             run_number += 1
+            prompt_label = str(num_prompts) if num_prompts is not None else "all"
             result_dir = (
                 args.output_dir
                 / _slug(dataset.name)
-                / f"concurrency-{concurrency}"
+                / f"concurrency-{concurrency}-prompts-{prompt_label}"
             )
             print(
                 f"[{run_number}/{total_runs}] "
-                f"dataset={dataset.name} concurrency={concurrency}",
+                f"dataset={dataset.name} concurrency={concurrency} "
+                f"num_prompts={prompt_label}",
                 file=sys.stderr,
             )
             config = BenchmarkConfig(
@@ -242,7 +285,7 @@ async def run_matrix(args: argparse.Namespace) -> int:
                 dataset_path=dataset.path,
                 output_dir=result_dir,
                 concurrency=concurrency,
-                num_prompts=args.num_prompts,
+                num_prompts=num_prompts,
                 max_tokens=args.max_tokens,
                 endpoint_type=args.endpoint_type,
                 temperature=args.temperature,
@@ -267,6 +310,7 @@ async def run_matrix(args: argparse.Namespace) -> int:
                     report_to_csv_row(
                         dataset,
                         report,
+                        requested_num_prompts=num_prompts,
                         summary_path=summary_path,
                         requests_path=requests_path,
                     )
@@ -275,7 +319,14 @@ async def run_matrix(args: argparse.Namespace) -> int:
                     had_errors = True
             except Exception as exc:
                 had_errors = True
-                rows.append(_error_row(dataset, concurrency, exc))
+                rows.append(
+                    _error_row(
+                        dataset,
+                        concurrency,
+                        num_prompts,
+                        exc,
+                    )
+                )
                 print(f"Run failed: {type(exc).__name__}: {exc}", file=sys.stderr)
                 if args.fail_fast:
                     write_csv(rows, csv_path)
@@ -312,7 +363,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("results/matrix"))
     parser.add_argument("--csv-file", type=Path)
     parser.add_argument("--endpoint-type", choices=("chat", "completions"), default="chat")
-    parser.add_argument("--num-prompts", type=int)
+    parser.add_argument(
+        "--num-prompts",
+        nargs="+",
+        help=(
+            "one positive value per concurrency; commas are also accepted; "
+            "omit to use each full dataset"
+        ),
+    )
     parser.add_argument("--max-tokens", type=int)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)

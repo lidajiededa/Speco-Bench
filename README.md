@@ -101,7 +101,7 @@ python3 scripts/benchmark_matrix.py \
   --model glm52 \
   --datasets gsm8k math500 humaneval mbpp mt_bench \
   --concurrencies 1 4 8 16 \
-  --num-prompts 100 \
+  --num-prompts 20 80 160 320 \
   --max-tokens 1024 \
   --output-dir results/matrix
 ```
@@ -111,11 +111,17 @@ python3 scripts/benchmark_matrix.py \
 数据集短名默认解析为 `dataset/<name>/question.jsonl`，也可以直接传入
 JSON/JSONL 文件路径。
 
+`--num-prompts` 按位置与 `--concurrencies` 一一对应。上例依次运行
+`(并发 1, 20 条)`、`(并发 4, 80 条)`、`(并发 8, 160 条)` 和
+`(并发 16, 320 条)`；两个参数的数量不一致时脚本会报错。不传
+`--num-prompts` 时，每种并发都使用完整数据集。
+
 汇总结果会持续写入 `results/matrix/matrix.csv`。每个组合的完整
 `summary.json` 和 `requests.jsonl` 分别保存在
-`results/matrix/<dataset>/concurrency-<N>/`。CSV 包含请求吞吐、输出及
-总 token 吞吐、TTFT/TPOT/E2E 分位数、投机接受率和错误信息。某个组合
-失败时默认记录错误后继续；传入 `--fail-fast` 可立即停止。
+`results/matrix/<dataset>/concurrency-<N>-prompts-<M>/`。CSV 包含请求
+数量、请求吞吐、输出及总 token 吞吐、TTFT/TPOT/E2E 分位数、投机接受率
+和错误信息。某个组合失败时默认记录错误后继续；传入 `--fail-fast`
+可立即停止。
 
 ## 运行压测
 

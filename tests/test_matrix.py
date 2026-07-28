@@ -6,6 +6,7 @@ from pathlib import Path
 from speco_bench.matrix import (
     DatasetSpec,
     parse_concurrencies,
+    parse_num_prompts,
     report_to_csv_row,
     resolve_datasets,
     write_csv,
@@ -15,7 +16,21 @@ from speco_bench.models import BenchmarkReport, SpecDecodeStats
 
 class MatrixTests(unittest.TestCase):
     def test_parse_concurrencies_accepts_spaces_and_commas(self):
-        self.assertEqual(parse_concurrencies(["1,2", "4", "2"]), [1, 2, 4])
+        self.assertEqual(parse_concurrencies(["1,2", "4"]), [1, 2, 4])
+
+    def test_num_prompts_matches_concurrencies_positionally(self):
+        self.assertEqual(
+            parse_num_prompts(["20,80", "160"], expected_count=3),
+            [20, 80, 160],
+        )
+        with self.assertRaisesRegex(ValueError, "exactly one value"):
+            parse_num_prompts(["20", "80"], expected_count=3)
+
+    def test_omitted_num_prompts_uses_full_dataset(self):
+        self.assertEqual(
+            parse_num_prompts(None, expected_count=3),
+            [None, None, None],
+        )
 
     def test_resolve_dataset_names_and_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -69,12 +84,14 @@ class MatrixTests(unittest.TestCase):
         row = report_to_csv_row(
             dataset,
             report,
+            requested_num_prompts=200,
             summary_path=Path("/tmp/summary.json"),
             requests_path=Path("/tmp/requests.jsonl"),
         )
 
         self.assertEqual(row["total_token_throughput_tok_s"], 15.0)
         self.assertEqual(row["draft_token_acceptance_rate"], 0.75)
+        self.assertEqual(row["requested_num_prompts"], 200)
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "matrix.csv"
             write_csv([row], destination)
