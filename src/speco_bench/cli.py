@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import BenchmarkConfig
 from .dataset import prepare_dataset_file
+from .matrix import add_matrix_parser, run_matrix
 from .output import format_report, save_report
 from .progress import TerminalProgress
 from .service import BenchmarkService
@@ -86,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare.add_argument("--default-max-tokens", type=int, default=256)
     prepare.add_argument("--limit", type=int)
+    add_matrix_parser(subparsers)
     return parser
 
 
@@ -144,4 +146,10 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(f"Prepared {count} records: {args.output}")
         return
+    if args.command == "matrix":
+        try:
+            exit_code = asyncio.run(run_matrix(args))
+        except (FileNotFoundError, ValueError) as exc:
+            raise SystemExit(f"error: {exc}") from exc
+        raise SystemExit(exit_code)
     raise SystemExit(asyncio.run(_run_benchmark(args)))

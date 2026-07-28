@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from speco_bench.cli import build_parser
 from speco_bench.matrix import (
     DatasetSpec,
     parse_concurrencies,
@@ -15,6 +16,26 @@ from speco_bench.models import BenchmarkReport, SpecDecodeStats
 
 
 class MatrixTests(unittest.TestCase):
+    def test_matrix_is_registered_on_main_cli(self):
+        args = build_parser().parse_args(
+            [
+                "matrix",
+                "--base-url",
+                "http://localhost:8000",
+                "--model",
+                "model",
+                "--datasets",
+                "gsm8k",
+                "--concurrencies",
+                "1",
+                "--num-prompts",
+                "20",
+            ]
+        )
+        self.assertEqual(args.command, "matrix")
+        self.assertEqual(args.concurrencies, ["1"])
+        self.assertEqual(args.num_prompts, ["20"])
+
     def test_parse_concurrencies_accepts_spaces_and_commas(self):
         self.assertEqual(parse_concurrencies(["1,2", "4"]), [1, 2, 4])
 

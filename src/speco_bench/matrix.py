@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import csv
 import json
 import os
@@ -340,9 +339,10 @@ async def run_matrix(args: argparse.Namespace) -> int:
     return 2 if had_errors else 0
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="speco-bench-matrix",
+def add_matrix_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "matrix",
+        help="benchmark dataset/concurrency combinations",
         description="Run every dataset/concurrency combination and write a CSV.",
     )
     parser.add_argument("--base-url", required=True)
@@ -384,13 +384,3 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-interval", type=float, default=1.0)
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--fail-fast", action="store_true")
-    return parser
-
-
-def main(argv: list[str] | None = None) -> None:
-    args = build_parser().parse_args(argv)
-    try:
-        exit_code = asyncio.run(run_matrix(args))
-    except (FileNotFoundError, ValueError) as exc:
-        raise SystemExit(f"error: {exc}") from exc
-    raise SystemExit(exit_code)

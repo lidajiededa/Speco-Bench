@@ -93,10 +93,11 @@ template token，因此服务端统计的总输入 token 会高于随机 prompt 
 
 ## 多数据集并发矩阵
 
-矩阵脚本可一次输入多个数据集和多个并发数，并运行它们的笛卡尔积：
+`speco-bench matrix` 可一次输入多个数据集和多个并发数，并运行它们的
+笛卡尔积：
 
 ```bash
-python3 scripts/benchmark_matrix.py \
+speco-bench matrix \
   --base-url http://127.0.0.1:8000 \
   --model glm52 \
   --datasets gsm8k math500 humaneval mbpp mt_bench \
@@ -106,10 +107,9 @@ python3 scripts/benchmark_matrix.py \
   --output-dir results/matrix
 ```
 
-安装项目后也可把第一行换成 `speco-bench-matrix`。数据集和并发数均支持
-逗号写法，例如 `--datasets gsm8k,math500 --concurrencies 1,4,8`。
-数据集短名默认解析为 `dataset/<name>/question.jsonl`，也可以直接传入
-JSON/JSONL 文件路径。
+数据集和并发数均支持逗号写法，例如
+`--datasets gsm8k,math500 --concurrencies 1,4,8`。数据集短名默认解析为
+`dataset/<name>/question.jsonl`，也可以直接传入 JSON/JSONL 文件路径。
 
 `--num-prompts` 按位置与 `--concurrencies` 一一对应。上例依次运行
 `(并发 1, 20 条)`、`(并发 4, 80 条)`、`(并发 8, 160 条)` 和
