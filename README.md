@@ -13,6 +13,7 @@
 - 投机平均接受长度、总接受率、各位置接受率
 - 请求级 `requests.jsonl` 与汇总 `summary.json`
 - ShareGPT、Alpaca、OpenAI messages、prompt 格式转换
+- 数据集与 tokenizer 定长随机输入两种压测模式
 
 ## 安装
 
@@ -51,6 +52,44 @@ speco-bench prepare \
 仓库内置的五个评测数据集统一位于
 `dataset/<dataset_name>/question.jsonl`，具体列表和重建方式见
 [`DATASETS.md`](DATASETS.md)。
+
+## 随机定长输入
+
+随机模式不需要数据集文件。先安装 tokenizer 依赖：
+
+```bash
+pip install -e '.[random]'
+```
+
+下面的命令生成 1,000 个输入 1,024 token、期望输出 128 token 的请求：
+
+```bash
+speco-bench run \
+  --base-url http://127.0.0.1:8000 \
+  --model /path/to/model \
+  --dataset-name random \
+  --endpoint-type completions \
+  --random-input-len 1024 \
+  --random-output-len 128 \
+  --random-range-ratio 0 \
+  --num-prompts 1000 \
+  --concurrency 16 \
+  --ignore-eos \
+  --output-dir results/random-1024-128
+```
+
+`--tokenizer` 默认使用 `--model`；如果服务端模型名不是客户端可读取的
+Hugging Face 名称或本地路径，可另外传入 `--tokenizer /path/to/tokenizer`。
+随机输入由 `--seed` 控制，可重复生成。
+
+`--random-range-ratio 0` 表示固定长度。设为 `0.2` 时，输入和输出长度
+分别在目标值的 80% 至 120% 之间按整数均匀采样。
+
+`--random-output-len` 和数据集模式的 `--max-tokens` 都会设置请求的生成
+上限；模型仍可能遇到 EOS 提前结束。对 vLLM / vLLM-Ascend 使用
+`--ignore-eos`，才能让服务端持续生成到请求长度。严格比较输入长度时建议
+使用 `--endpoint-type completions`；chat 端点还会由服务端加入 chat
+template token，因此服务端统计的总输入 token 会高于随机 prompt 本身。
 
 ## 运行压测
 

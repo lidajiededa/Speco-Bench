@@ -74,8 +74,10 @@ class OpenAIStreamingClient:
             "max_tokens": request.max_tokens,
             "temperature": self.config.temperature,
             "top_p": self.config.top_p,
-            **self.config.extra_body,
         }
+        if self.config.ignore_eos:
+            payload["ignore_eos"] = True
+        payload.update(self.config.extra_body)
         if self.config.endpoint_type == "chat":
             if request.messages is None:
                 payload["messages"] = [{"role": "user", "content": request.prompt or ""}]
@@ -170,4 +172,3 @@ class OpenAIStreamingClient:
                 body = await response.text()
                 raise RuntimeError(f"metrics HTTP {response.status}: {body[:500]}")
             return await response.text()
-

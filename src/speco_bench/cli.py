@@ -31,12 +31,31 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="benchmark an OpenAI-compatible server")
     run.add_argument("--base-url", required=True)
     run.add_argument("--model", required=True)
-    run.add_argument("--dataset-path", type=Path, required=True)
+    run.add_argument(
+        "--dataset-name",
+        choices=("custom", "random"),
+        default="custom",
+        help="custom reads --dataset-path; random generates synthetic prompts",
+    )
+    run.add_argument("--dataset-path", type=Path)
     run.add_argument("--output-dir", type=Path, default=Path("results"))
     run.add_argument("--endpoint-type", choices=("chat", "completions"), default="chat")
     run.add_argument("--concurrency", type=int, default=1)
     run.add_argument("--num-prompts", type=int)
     run.add_argument("--max-tokens", type=int)
+    run.add_argument("--random-input-len", type=int, default=1024)
+    run.add_argument("--random-output-len", type=int, default=128)
+    run.add_argument("--random-range-ratio", type=float, default=0.0)
+    run.add_argument(
+        "--tokenizer",
+        help="tokenizer name or path for random prompts (default: --model)",
+    )
+    run.add_argument("--trust-remote-code", action="store_true")
+    run.add_argument(
+        "--ignore-eos",
+        action="store_true",
+        help="ask vLLM to generate until the requested output length",
+    )
     run.add_argument("--temperature", type=float, default=0.0)
     run.add_argument("--top-p", type=float, default=1.0)
     run.add_argument("--seed", type=int, default=0)
@@ -76,10 +95,17 @@ async def _run_benchmark(args: argparse.Namespace) -> int:
         model=args.model,
         dataset_path=args.dataset_path,
         output_dir=args.output_dir,
+        dataset_name=args.dataset_name,
         endpoint_type=args.endpoint_type,
         concurrency=args.concurrency,
         num_prompts=args.num_prompts,
         max_tokens=args.max_tokens,
+        random_input_len=args.random_input_len,
+        random_output_len=args.random_output_len,
+        random_range_ratio=args.random_range_ratio,
+        tokenizer=args.tokenizer,
+        trust_remote_code=args.trust_remote_code,
+        ignore_eos=args.ignore_eos,
         temperature=args.temperature,
         top_p=args.top_p,
         seed=args.seed,
