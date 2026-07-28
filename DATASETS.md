@@ -1,22 +1,26 @@
-# Additional benchmark datasets
+# Benchmark datasets
 
-This repository contains MATH-500, HumanEval, sanitized MBPP, and MT-Bench in
-a JSONL format that is directly readable by Speco-Bench. Every row contains
-`prompt` and `max_tokens`; the original `turns` field is also retained for
-AngelSlim's `tools/vllm_spec_benchmark.py`.
+This repository contains GSM8K, MATH-500, HumanEval, sanitized MBPP, and
+MT-Bench in a JSONL format that is directly readable by Speco-Bench. All
+prepared files use the same `dataset/<name>/question.jsonl` layout. Every row
+contains `prompt` and `max_tokens`; the four datasets produced by
+`prepare_datasets.py` also retain `turns` for AngelSlim's
+`tools/vllm_spec_benchmark.py`.
 
 ## Prepared datasets
 
 | Dataset | Output | Records |
 | --- | --- | ---: |
+| GSM8K test | `dataset/gsm8k/question.jsonl` | 1,319 |
 | MATH-500 | `dataset/math500/question.jsonl` | 500 |
 | HumanEval | `dataset/humaneval/question.jsonl` | 164 |
 | MBPP sanitized test | `dataset/mbpp/question.jsonl` | 257 |
 | MT-Bench | `dataset/mt_bench/question.jsonl` | 80 |
 
-Every output record has a non-empty `prompt` and `turns` list. Reference
-answers, canonical solutions, and tests are retained as metadata fields even
-though throughput benchmarks only need the prompt.
+Every output record has a non-empty `prompt`; the four converted datasets also
+have a non-empty `turns` list. Reference answers, canonical solutions, and
+tests are retained as metadata fields even though throughput benchmarks only
+need the prompt.
 
 ## Rebuild
 
@@ -64,7 +68,7 @@ Pass the generated files as comma-separated local paths:
 python3 tools/vllm_spec_benchmark.py \
   --target_model "$MODEL_DIR" \
   --draft_model "$EAGLE_DIR" \
-  --dataset "/Users/lijie/Documents/Speco-Bench/dataset/math500/question.jsonl,/Users/lijie/Documents/Speco-Bench/dataset/humaneval/question.jsonl,/Users/lijie/Documents/Speco-Bench/dataset/mbpp/question.jsonl,/Users/lijie/Documents/Speco-Bench/dataset/mt_bench/question.jsonl" \
+  --dataset "dataset/gsm8k/question.jsonl,dataset/math500/question.jsonl,dataset/humaneval/question.jsonl,dataset/mbpp/question.jsonl,dataset/mt_bench/question.jsonl" \
   --output_file benchmark_stats.jsonl \
   --method eagle3 \
   --output_len 1024 \

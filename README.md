@@ -41,12 +41,16 @@ pip install -e .
 ```bash
 speco-bench prepare \
   --input raw_dataset.json \
-  --output data/benchmark.jsonl \
+  --output dataset/custom/question.jsonl \
   --format auto \
   --default-max-tokens 1024
 ```
 
 `--format` 支持 `auto`、`prompt`、`messages`、`sharegpt`、`alpaca`。ShareGPT 数据末尾已有的 assistant 参考答案会被移除，只保留待模型回答的上下文。
+
+仓库内置的五个评测数据集统一位于
+`dataset/<dataset_name>/question.jsonl`，具体列表和重建方式见
+[`DATASETS.md`](DATASETS.md)。
 
 ## 运行压测
 
@@ -54,7 +58,7 @@ speco-bench prepare \
 speco-bench run \
   --base-url http://127.0.0.1:8000 \
   --model glm52 \
-  --dataset-path data/benchmark.jsonl \
+  --dataset-path dataset/gsm8k/question.jsonl \
   --num-prompts 100 \
   --concurrency 16 \
   --max-tokens 1024 \
