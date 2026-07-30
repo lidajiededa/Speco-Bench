@@ -603,7 +603,7 @@ select {
 .metric-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .metric-card {
@@ -677,7 +677,8 @@ select {
 }
 
 .chart-panel,
-.run-list-panel {
+.run-list-panel,
+.acceptance-panel {
   min-width: 0;
   padding: 18px;
   border: 1px solid var(--line);
@@ -746,12 +747,38 @@ select {
 
 .run-item {
   display: grid;
+  width: 100%;
   min-height: 54px;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
+  border: 0;
   background: white;
+  color: var(--ink);
+  font: inherit;
   grid-template-columns: 24px minmax(0, 1fr) auto;
+  text-align: left;
+}
+
+.run-item:hover {
+  background: #f5f9f7;
+}
+
+.run-item:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+
+.run-item.selected {
+  background: var(--green-soft);
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.run-item.selected .run-index,
+.run-item.selected .run-name small {
+  color: #387463;
 }
 
 .run-index {
@@ -789,6 +816,52 @@ select {
 
 .run-value.failed {
   color: var(--danger);
+}
+
+.acceptance-panel {
+  margin-top: 14px;
+}
+
+.acceptance-chart-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+#acceptanceChart {
+  display: block;
+  min-width: 100%;
+  height: 210px;
+}
+
+.acceptance-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  min-height: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.acceptance-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.acceptance-value::before {
+  width: 7px;
+  height: 7px;
+  background: var(--green);
+  content: "";
+}
+
+.acceptance-value strong {
+  color: var(--ink);
+  font-size: 11px;
 }
 
 .text-button {

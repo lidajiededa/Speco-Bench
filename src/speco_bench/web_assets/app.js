@@ -20,10 +20,15 @@ const latencyCharts = {
   tpot_ms: document.querySelector("#tpotChart"),
   e2e_ms: document.querySelector("#e2eChart"),
 };
+const acceptancePanel = document.querySelector("#acceptancePanel");
+const acceptanceChart = document.querySelector("#acceptanceChart");
+const acceptanceValues = document.querySelector("#acceptanceValues");
 
 let activeJobId = null;
 let pollTimer = null;
 let selectedJob = null;
+let selectedRunIndex = null;
+let selectedRunPinned = false;
 
 const statusLabels = {
   queued: "排队中",
@@ -209,6 +214,14 @@ function latestCompletedRun(job) {
   return [...job.runs].reverse().find((run) => run.report);
 }
 
+function selectedRunForJob(job) {
+  if (selectedRunPinned && selectedRunIndex !== null) {
+    const selected = job.runs.find((run) => run.index === selectedRunIndex);
+    if (selected) return selected;
+  }
+  return latestCompletedRun(job);
+}
+
 function drawLatencyChart(canvas, distribution, color) {
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -275,12 +288,103 @@ function drawLatencyCharts(summary) {
   }
 }
 
-function renderRuns(job) {
+function drawAcceptanceChart(rates) {
+  const wrapper = acceptanceChart.parentElement;
+  const width = Math.max(wrapper.clientWidth, 48 + rates.length * 58);
+  const height = 210;
+  const ratio = window.devicePixelRatio || 1;
+  acceptanceChart.style.width = `${width}px`;
+  acceptanceChart.width = width * ratio;
+  acceptanceChart.height = height * ratio;
+  const context = acceptanceChart.getContext("2d");
+  context.scale(ratio, ratio);
+  context.clearRect(0, 0, width, height);
+
+  const top = 24;
+  const bottom = 30;
+  const left = 36;
+  const right = 10;
+  const plotHeight = height - top - bottom;
+  const plotWidth = width - left - right;
+  context.font = "9px system-ui";
+  context.strokeStyle = "#e2e6e8";
+  context.fillStyle = "#69747a";
+  context.lineWidth = 1;
+
+  for (const percent of [100, 50, 0]) {
+    const y = top + plotHeight * (1 - percent / 100);
+    context.beginPath();
+    context.moveTo(left, y);
+    context.lineTo(width - right, y);
+    context.stroke();
+    context.fillText(`${percent}%`, 2, y + 3);
+  }
+
+  const slotWidth = plotWidth / rates.length;
+  const barWidth = Math.min(30, slotWidth * 0.58);
+  rates.forEach((rate, index) => {
+    const percent = Math.max(0, Math.min(100, Number(rate) * 100));
+    const barHeight = plotHeight * percent / 100;
+    const center = left + slotWidth * (index + 0.5);
+    const x = center - barWidth / 2;
+    const y = top + plotHeight - barHeight;
+    context.fillStyle = "#147d64";
+    context.globalAlpha = 0.68 + 0.32 * (index / Math.max(1, rates.length - 1));
+    context.fillRect(x, y, barWidth, barHeight);
+    context.globalAlpha = 1;
+    context.fillStyle = "#344047";
+    context.textAlign = "center";
+    context.fillText(`${formatNumber(percent, 1)}%`, center, Math.max(11, y - 5));
+    context.fillText(`P${index + 1}`, center, height - 9);
+  });
+  context.textAlign = "start";
+}
+
+function renderSpecDecode(run) {
+  const spec = run?.report?.spec_decode;
+  const available = Boolean(spec?.available);
+  const hasAcceptanceRate =
+    typeof spec?.acceptance_rate === "number" &&
+    Number.isFinite(spec.acceptance_rate);
+  const hasMeanAcceptanceLength =
+    typeof spec?.mean_acceptance_length === "number" &&
+    Number.isFinite(spec.mean_acceptance_length);
+  document.querySelector("#acceptanceRate").textContent =
+    available && hasAcceptanceRate
+      ? `${formatNumber(spec.acceptance_rate * 100, 1)}%`
+      : "--";
+  document.querySelector("#meanAcceptanceLength").textContent =
+    available && hasMeanAcceptanceLength
+      ? formatNumber(spec.mean_acceptance_length, 2)
+      : "--";
+  document.querySelector("#draftRounds").textContent =
+    available ? formatNumber(spec.num_drafts, 0) : "--";
+
+  const rates = available ? spec.position_acceptance_rates || [] : [];
+  acceptancePanel.hidden = !rates.length;
+  acceptanceValues.replaceChildren();
+  if (!rates.length) return;
+
+  document.querySelector("#acceptanceContext").textContent =
+    `${run.dataset} · C${run.concurrency}`;
+  drawAcceptanceChart(rates);
+  rates.forEach((rate, index) => {
+    const item = document.createElement("span");
+    item.className = "acceptance-value";
+    item.innerHTML = `P${index + 1} <strong>${formatNumber(rate * 100, 1)}%</strong>`;
+    acceptanceValues.append(item);
+  });
+}
+
+function renderRuns(job, currentRun) {
   const runList = document.querySelector("#runList");
   runList.replaceChildren();
   for (const run of job.runs) {
-    const item = document.createElement("div");
-    item.className = "run-item";
+    const item = document.createElement("button");
+    const selected = currentRun?.index === run.index;
+    item.type = "button";
+    item.className = `run-item${selected ? " selected" : ""}`;
+    item.setAttribute("aria-pressed", String(selected));
     const throughput = run.report
       ? `${formatNumber(run.report.request_throughput)} req/s`
       : run.status === "failed"
@@ -296,15 +400,20 @@ function renderRuns(job) {
         ${throughput}
       </span>
     `;
+    item.addEventListener("click", () => {
+      selectedRunIndex = run.index;
+      selectedRunPinned = true;
+      renderResult(job);
+    });
     runList.append(item);
   }
 }
 
-function renderMessages(job) {
-  const warnings = job.runs.flatMap((run) => run.report?.warnings || []);
-  const failures = job.runs
-    .filter((run) => run.error)
-    .map((run) => `${run.dataset} / C${run.concurrency}: ${run.error}`);
+function renderMessages(job, run) {
+  const warnings = run?.report?.warnings || [];
+  const failures = run?.error
+    ? [`${run.dataset} / C${run.concurrency}: ${run.error}`]
+    : [];
   if (job.error) failures.push(job.error);
   const warningBox = document.querySelector("#warningBox");
   const messages = [...new Set([...warnings, ...failures])];
@@ -320,6 +429,8 @@ function renderEmptyMetrics() {
     "meanTpot",
     "successfulRequests",
     "acceptanceRate",
+    "meanAcceptanceLength",
+    "draftRounds",
   ]) {
     document.querySelector(`#${id}`).textContent = "--";
   }
@@ -329,29 +440,36 @@ function renderEmptyMetrics() {
     tpot_ms: {},
     e2e_ms: {},
   });
+  acceptancePanel.hidden = true;
+  acceptanceValues.replaceChildren();
+  document.querySelector("#latencyContext").textContent = "独立量程 · 毫秒";
+  document.querySelector("#acceptanceContext").textContent = "";
 }
 
 function renderResult(job) {
-  const completedRun = latestCompletedRun(job);
-  renderRuns(job);
+  const currentRun = selectedRunForJob(job);
+  renderRuns(job, currentRun);
   const csvDownload = document.querySelector("#csvDownload");
   csvDownload.hidden = !job.runs.length;
   csvDownload.href = `/api/jobs/${job.id}/files/matrix.csv`;
 
-  if (!completedRun) {
+  if (!currentRun?.report) {
     const terminal = ["completed", "failed", "cancelled"].includes(job.status);
-    resultContent.hidden = !terminal;
-    emptyState.hidden = terminal || job.status === "running";
-    if (terminal) {
+    const showDetails = terminal || Boolean(currentRun?.error);
+    resultContent.hidden = !showDetails;
+    emptyState.hidden = showDetails || job.status === "running";
+    if (showDetails) {
       renderEmptyMetrics();
-      renderMessages(job);
+      renderMessages(job, currentRun);
     }
     return;
   }
 
-  const summary = completedRun.report;
+  const summary = currentRun.report;
   emptyState.hidden = true;
   resultContent.hidden = false;
+  document.querySelector("#latencyContext").textContent =
+    `${currentRun.dataset} · C${currentRun.concurrency} · 独立量程`;
   document.querySelector("#requestThroughput").textContent =
     formatNumber(summary.request_throughput);
   document.querySelector("#outputThroughput").textContent =
@@ -364,13 +482,9 @@ function renderResult(job) {
     summary.successful_requests;
   document.querySelector("#requestTotal").textContent =
     `/ ${summary.total_requests} total`;
-  const acceptance = completedRun.report.spec_decode?.acceptance_rate;
-  document.querySelector("#acceptanceRate").textContent =
-    acceptance === null || acceptance === undefined
-      ? "--"
-      : `${formatNumber(acceptance * 100, 1)}%`;
   drawLatencyCharts(summary);
-  renderMessages(job);
+  renderSpecDecode(currentRun);
+  renderMessages(job, currentRun);
 }
 
 function escapeHtml(value) {
@@ -402,6 +516,10 @@ function renderHistory(jobs) {
 }
 
 function selectJob(job) {
+  if (selectedJob?.id !== job.id) {
+    selectedRunIndex = null;
+    selectedRunPinned = false;
+  }
   selectedJob = job;
   updateStatus(job);
   renderResult(job);
@@ -503,8 +621,12 @@ rangeRatio.addEventListener("input", () => {
 
 refreshButton.addEventListener("click", refreshJobs);
 window.addEventListener("resize", () => {
-  const completedRun = selectedJob && latestCompletedRun(selectedJob);
-  if (completedRun) drawLatencyCharts(completedRun.report);
+  const currentRun = selectedJob && selectedRunForJob(selectedJob);
+  if (currentRun?.report) {
+    drawLatencyCharts(currentRun.report);
+    const rates = currentRun.report.spec_decode?.position_acceptance_rates || [];
+    if (rates.length) drawAcceptanceChart(rates);
+  }
 });
 
 async function initialize() {

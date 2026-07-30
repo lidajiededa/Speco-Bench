@@ -294,9 +294,19 @@
               <small id="requestTotal">total</small>
             </article>
             <article class="metric-card">
-              <span>投机接受率</span>
+              <span>草稿 Token 接受率</span>
               <strong id="acceptanceRate">--</strong>
               <small>draft token</small>
+            </article>
+            <article class="metric-card accent-green">
+              <span>平均接受长度</span>
+              <strong id="meanAcceptanceLength">--</strong>
+              <small>token / draft round</small>
+            </article>
+            <article class="metric-card">
+              <span>草稿轮数</span>
+              <strong id="draftRounds">--</strong>
+              <small>draft rounds</small>
             </article>
           </div>
 
@@ -307,7 +317,7 @@
                   <p class="eyebrow">延迟分布</p>
                   <h3>P50 / P90 / P99</h3>
                 </div>
-                <span>独立量程 · 毫秒</span>
+                <span id="latencyContext">独立量程 · 毫秒</span>
               </div>
               <div class="latency-chart-grid">
                 <div class="latency-chart-item">
@@ -338,6 +348,20 @@
               </div>
               <div class="run-list" id="runList"></div>
             </div>
+          </div>
+
+          <div class="acceptance-panel" id="acceptancePanel" hidden>
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">投机解码</p>
+                <h3>各位置平均接受率</h3>
+              </div>
+              <span id="acceptanceContext"></span>
+            </div>
+            <div class="acceptance-chart-scroll">
+              <canvas id="acceptanceChart" height="210"></canvas>
+            </div>
+            <div class="acceptance-values" id="acceptanceValues"></div>
           </div>
 
           <div class="warning-box" id="warningBox" hidden></div>
