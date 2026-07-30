@@ -307,9 +307,25 @@
                   <p class="eyebrow">延迟分布</p>
                   <h3>P50 / P90 / P99</h3>
                 </div>
-                <span id="chartUnit">毫秒</span>
+                <span>独立量程 · 毫秒</span>
               </div>
-              <canvas id="latencyChart" height="230"></canvas>
+              <div class="latency-chart-grid">
+                <div class="latency-chart-item">
+                  <strong>TTFT</strong>
+                  <span>首 Token 延迟</span>
+                  <canvas id="ttftChart" height="210"></canvas>
+                </div>
+                <div class="latency-chart-item">
+                  <strong>TPOT</strong>
+                  <span>Token 间延迟</span>
+                  <canvas id="tpotChart" height="210"></canvas>
+                </div>
+                <div class="latency-chart-item">
+                  <strong>E2E</strong>
+                  <span>端到端延迟</span>
+                  <canvas id="e2eChart" height="210"></canvas>
+                </div>
+              </div>
             </div>
 
             <div class="run-list-panel">

@@ -15,7 +15,11 @@ const statusBadge = document.querySelector("#statusBadge");
 const runTitle = document.querySelector("#runTitle");
 const historyBody = document.querySelector("#historyBody");
 const refreshButton = document.querySelector("#refreshButton");
-const canvas = document.querySelector("#latencyChart");
+const latencyCharts = {
+  ttft_ms: document.querySelector("#ttftChart"),
+  tpot_ms: document.querySelector("#tpotChart"),
+  e2e_ms: document.querySelector("#e2eChart"),
+};
 
 let activeJobId = null;
 let pollTimer = null;
@@ -205,67 +209,70 @@ function latestCompletedRun(job) {
   return [...job.runs].reverse().find((run) => run.report);
 }
 
-function drawLatencyChart(summary) {
+function drawLatencyChart(canvas, distribution, color) {
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  const width = Math.max(320, Math.round(rect.width));
-  const height = 230;
+  const width = Math.max(170, Math.round(rect.width));
+  const height = 210;
   canvas.width = width * ratio;
   canvas.height = height * ratio;
   const context = canvas.getContext("2d");
   context.scale(ratio, ratio);
   context.clearRect(0, 0, width, height);
 
-  const groups = [
-    {name: "TTFT", values: summary.ttft_ms, color: "#28739f"},
-    {name: "TPOT", values: summary.tpot_ms, color: "#b75345"},
-    {name: "E2E", values: summary.e2e_ms, color: "#147d64"},
-  ];
   const keys = ["p50", "p90", "p99"];
-  const values = groups.flatMap((group) =>
-    keys.map((key) => Number(group.values[key] || 0)),
-  );
-  const maxValue = Math.max(...values, 1);
-  const top = 22;
-  const bottom = 36;
-  const left = 42;
-  const right = 12;
+  const values = keys.map((key) => Number(distribution[key] || 0));
+  const rawMaximum = Math.max(...values, 0);
+  const maxValue = rawMaximum > 0 ? rawMaximum * 1.15 : 1;
+  const top = 25;
+  const bottom = 31;
+  const left = 31;
+  const right = 5;
   const plotHeight = height - top - bottom;
   const plotWidth = width - left - right;
 
-  context.font = "10px system-ui";
+  context.font = "9px system-ui";
   context.fillStyle = "#69747a";
   context.strokeStyle = "#e2e6e8";
   context.lineWidth = 1;
-  for (let tick = 0; tick <= 4; tick += 1) {
-    const y = top + (plotHeight * tick) / 4;
+  for (let tick = 0; tick <= 2; tick += 1) {
+    const y = top + (plotHeight * tick) / 2;
     context.beginPath();
     context.moveTo(left, y);
     context.lineTo(width - right, y);
     context.stroke();
-    const label = maxValue * (1 - tick / 4);
-    context.fillText(formatNumber(label, 0), 2, y + 3);
+    const label = maxValue * (1 - tick / 2);
+    context.fillText(formatNumber(label, label < 10 ? 1 : 0), 1, y + 3);
   }
 
-  const groupWidth = plotWidth / groups.length;
-  const barWidth = Math.min(24, groupWidth / 5);
-  groups.forEach((group, groupIndex) => {
-    const center = left + groupWidth * (groupIndex + 0.5);
-    keys.forEach((key, keyIndex) => {
-      const value = Number(group.values[key] || 0);
-      const barHeight = (value / maxValue) * plotHeight;
-      const x = center + (keyIndex - 1) * (barWidth + 5) - barWidth / 2;
-      const y = top + plotHeight - barHeight;
-      context.globalAlpha = 0.55 + keyIndex * 0.2;
-      context.fillStyle = group.color;
-      context.fillRect(x, y, barWidth, barHeight);
-    });
+  const slotWidth = plotWidth / keys.length;
+  const barWidth = Math.min(28, slotWidth * 0.55);
+  keys.forEach((key, index) => {
+    const value = values[index];
+    const barHeight = (value / maxValue) * plotHeight;
+    const center = left + slotWidth * (index + 0.5);
+    const x = center - barWidth / 2;
+    const y = top + plotHeight - barHeight;
+    context.globalAlpha = 0.55 + index * 0.2;
+    context.fillStyle = color;
+    context.fillRect(x, y, barWidth, barHeight);
     context.globalAlpha = 1;
     context.fillStyle = "#344047";
     context.textAlign = "center";
-    context.fillText(group.name, center, height - 12);
+    context.fillText(key.toUpperCase(), center, height - 10);
   });
   context.textAlign = "start";
+}
+
+function drawLatencyCharts(summary) {
+  const colors = {
+    ttft_ms: "#28739f",
+    tpot_ms: "#b75345",
+    e2e_ms: "#147d64",
+  };
+  for (const [metric, canvas] of Object.entries(latencyCharts)) {
+    drawLatencyChart(canvas, summary[metric] || {}, colors[metric]);
+  }
 }
 
 function renderRuns(job) {
@@ -317,7 +324,7 @@ function renderEmptyMetrics() {
     document.querySelector(`#${id}`).textContent = "--";
   }
   document.querySelector("#requestTotal").textContent = "total";
-  drawLatencyChart({
+  drawLatencyCharts({
     ttft_ms: {},
     tpot_ms: {},
     e2e_ms: {},
@@ -362,7 +369,7 @@ function renderResult(job) {
     acceptance === null || acceptance === undefined
       ? "--"
       : `${formatNumber(acceptance * 100, 1)}%`;
-  drawLatencyChart(summary);
+  drawLatencyCharts(summary);
   renderMessages(job);
 }
 
@@ -497,7 +504,7 @@ rangeRatio.addEventListener("input", () => {
 refreshButton.addEventListener("click", refreshJobs);
 window.addEventListener("resize", () => {
   const completedRun = selectedJob && latestCompletedRun(selectedJob);
-  if (completedRun) drawLatencyChart(completedRun.report);
+  if (completedRun) drawLatencyCharts(completedRun.report);
 });
 
 async function initialize() {
