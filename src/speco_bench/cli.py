@@ -88,6 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--default-max-tokens", type=int, default=256)
     prepare.add_argument("--limit", type=int)
     add_matrix_parser(subparsers)
+
+    web = subparsers.add_parser(
+        "web",
+        help="start the local benchmark web console",
+    )
+    web.add_argument("--host", default="127.0.0.1")
+    web.add_argument("--port", type=int, default=8080)
+    web.add_argument("--dataset-root", type=Path, default=Path("dataset"))
+    web.add_argument("--output-dir", type=Path, default=Path("results/web"))
     return parser
 
 
@@ -152,4 +161,14 @@ def main(argv: list[str] | None = None) -> None:
         except (FileNotFoundError, ValueError) as exc:
             raise SystemExit(f"error: {exc}") from exc
         raise SystemExit(exit_code)
+    if args.command == "web":
+        from .web import run_web_server
+
+        run_web_server(
+            host=args.host,
+            port=args.port,
+            dataset_root=args.dataset_root,
+            output_root=args.output_dir,
+        )
+        return
     raise SystemExit(asyncio.run(_run_benchmark(args)))

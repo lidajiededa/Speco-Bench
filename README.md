@@ -14,6 +14,7 @@
 - 请求级 `requests.jsonl` 与汇总 `summary.json`
 - ShareGPT、Alpaca、OpenAI messages、prompt 格式转换
 - 数据集与 tokenizer 定长随机输入两种压测模式
+- 本地 Web 控制台、批量任务进度与结果下载
 
 ## 安装
 
@@ -197,17 +198,37 @@ results/glm52-dflash/
 
 `summary.json` 是稳定的结构化输出，供后续网页、数据库或报告模块直接消费。`requests.jsonl` 保存每个请求的成功状态、token 数、TTFT、TPOT、E2E 和错误信息。
 
-## 网页化适配
+## Web 控制台
 
-代码把界面与执行逻辑分开：
+从项目根目录启动：
 
-- `BenchmarkService.run(config, progress_callback=...)` 是应用层入口；
-- `BenchmarkConfig` 是可序列化配置模型；
-- `BenchmarkReport` 是结构化结果；
-- `ProgressUpdate` 提供阶段、完成数、成功/失败数、速率、耗时和 ETA；
-- CLI 只负责参数解析和文件输出。
+```bash
+speco-bench web \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --dataset-root dataset \
+  --output-dir results/web
+```
 
-后续做网页时，可将 `progress_callback` 收到的 `ProgressUpdate.to_dict()` 写入任务状态或消息队列，再通过 WebSocket/SSE 推送给前端；前端不需要解析终端文本。
+然后访问 `http://127.0.0.1:8080`。页面支持：
+
+- 选择一个或多个内置数据集，也可以填写服务器本地 JSON/JSONL 路径；
+- 使用随机定长输入，并分别填写服务模型名和 tokenizer / 模型路径；
+- 一次填写多个并发数，以及与其一一对应的请求数；
+- 查看预热与正式压测进度、吞吐、延迟分位数和投机接受率；
+- 停止活动任务、查看最近任务，并下载每个任务的 `matrix.csv`。
+
+网页后台一次只执行一个任务，任务内部按顺序运行数据集和并发组合，避免并行
+任务污染同一服务的 `/metrics` counter 增量。结果保存在
+`results/web/<job-id>/`。如需在网页中使用随机输入，安装时仍需启用 tokenizer
+依赖：
+
+```bash
+pip install -e '.[random]'
+```
+
+默认只监听 `127.0.0.1`。如果使用 `--host 0.0.0.0` 暴露给其他机器，请在受信
+网络或反向代理鉴权之后使用，因为网页可以发起压测并读取服务器本地数据集路径。
 
 ## 测试
 

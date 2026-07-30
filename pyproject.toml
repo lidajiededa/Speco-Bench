@@ -25,6 +25,9 @@ speco-bench = "speco_bench.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+speco_bench = ["web_assets/*.html", "web_assets/*.css", "web_assets/*.js"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

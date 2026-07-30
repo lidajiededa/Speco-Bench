@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Speco-Bench Console</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-block">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <div>
+          <h1>Speco-Bench</h1>
+          <p>性能测试控制台</p>
+        </div>
+      </div>
+      <div class="server-state" id="serverState">
+        <span class="state-dot"></span>
+        <span>正在连接</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-panel">
+        <form id="benchmarkForm">
+          <section class="form-section">
+            <div class="section-heading">
+              <span class="step-number">01</span>
+              <h2>服务</h2>
+            </div>
+            <label class="field">
+              <span>Base URL</span>
+              <input
+                name="base_url"
+                type="url"
+                value="http://127.0.0.1:8000"
+                required
+              >
+            </label>
+            <label class="field">
+              <span>服务模型名</span>
+              <input
+                name="model"
+                type="text"
+                placeholder="例如 qwen3-serving"
+                required
+              >
+            </label>
+            <label class="field">
+              <span>接口类型</span>
+              <select name="endpoint_type">
+                <option value="chat">Chat Completions</option>
+                <option value="completions">Completions</option>
+              </select>
+            </label>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <span class="step-number">02</span>
+              <h2>负载</h2>
+            </div>
+            <div class="segmented" role="radiogroup" aria-label="负载类型">
+              <label>
+                <input type="radio" name="dataset_name" value="custom" checked>
+                <span>评测数据集</span>
+              </label>
+              <label>
+                <input type="radio" name="dataset_name" value="random">
+                <span>随机定长</span>
+              </label>
+            </div>
+
+            <div id="datasetFields">
+              <fieldset class="field dataset-picker">
+                <legend>数据集</legend>
+                <div id="datasetOptions" class="check-grid">
+                  <span class="muted">正在读取...</span>
+                </div>
+              </fieldset>
+              <label class="field">
+                <span>自定义数据集路径</span>
+                <input
+                  name="custom_dataset"
+                  type="text"
+                  placeholder="/path/to/question.jsonl"
+                >
+              </label>
+              <label class="field">
+                <span>每条最大输出 Token</span>
+                <input name="max_tokens" type="number" min="1" value="1024">
+              </label>
+            </div>
+
+            <div id="randomFields" hidden>
+              <label class="field">
+                <span>Tokenizer / 模型路径</span>
+                <input
+                  name="tokenizer"
+                  type="text"
+                  placeholder="/path/to/model"
+                >
+              </label>
+              <div class="field-pair">
+                <label class="field">
+                  <span>输入 Token</span>
+                  <input name="random_input_len" type="number" min="1" value="1024">
+                </label>
+                <label class="field">
+                  <span>输出 Token</span>
+                  <input name="random_output_len" type="number" min="1" value="128">
+                </label>
+              </div>
+              <label class="field">
+                <span>长度浮动比例</span>
+                <div class="range-control">
+                  <input
+                    id="rangeRatio"
+                    name="random_range_ratio"
+                    type="range"
+                    min="0"
+                    max="0.9"
+                    step="0.05"
+                    value="0"
+                  >
+                  <output id="rangeRatioValue">0%</output>
+                </div>
+              </label>
+              <label class="toggle-row">
+                <input name="trust_remote_code" type="checkbox">
+                <span class="toggle"></span>
+                <span>Trust remote code</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <span class="step-number">03</span>
+              <h2>并发</h2>
+            </div>
+            <label class="field">
+              <span>并发数</span>
+              <input
+                name="concurrencies"
+                type="text"
+                value="1, 4, 8"
+                placeholder="1, 4, 8"
+                required
+              >
+            </label>
+            <label class="field">
+              <span>请求数</span>
+              <input
+                name="num_prompts"
+                type="text"
+                value="20, 80, 160"
+                placeholder="与并发数一一对应"
+              >
+            </label>
+            <label class="toggle-row">
+              <input name="ignore_eos" type="checkbox">
+              <span class="toggle"></span>
+              <span>忽略 EOS</span>
+            </label>
+          </section>
+
+          <details class="advanced-section">
+            <summary>高级设置</summary>
+            <div class="advanced-grid">
+              <div class="field-pair">
+                <label class="field">
+                  <span>Temperature</span>
+                  <input name="temperature" type="number" min="0" step="0.1" value="0">
+                </label>
+                <label class="field">
+                  <span>Top P</span>
+                  <input name="top_p" type="number" min="0.01" max="1" step="0.01" value="1">
+                </label>
+              </div>
+              <div class="field-pair">
+                <label class="field">
+                  <span>预热请求</span>
+                  <input name="warmup_requests" type="number" min="0" value="1">
+                </label>
+                <label class="field">
+                  <span>随机种子</span>
+                  <input name="seed" type="number" value="0">
+                </label>
+              </div>
+              <label class="field">
+                <span>Metrics URL</span>
+                <input name="metrics_url" type="url" placeholder="默认使用服务 /metrics">
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input name="api_key" type="password" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>请求超时（秒）</span>
+                <input
+                  name="request_timeout_seconds"
+                  type="number"
+                  min="1"
+                  value="3600"
+                >
+              </label>
+              <label class="field">
+                <span>Extra Body（JSON）</span>
+                <textarea name="extra_body" rows="3">{}</textarea>
+              </label>
+            </div>
+          </details>
+
+          <div class="form-actions">
+            <button class="primary-button" id="startButton" type="submit">
+              <span aria-hidden="true">▶</span>
+              启动压测
+            </button>
+            <button class="danger-button" id="cancelButton" type="button" hidden>
+              <span aria-hidden="true">■</span>
+              停止
+            </button>
+          </div>
+          <p class="form-error" id="formError" role="alert"></p>
+        </form>
+      </aside>
+
+      <section class="results-panel">
+        <div class="run-header">
+          <div>
+            <p class="eyebrow">当前任务</p>
+            <h2 id="runTitle">尚未启动</h2>
+          </div>
+          <span class="status-badge idle" id="statusBadge">空闲</span>
+        </div>
+
+        <section class="progress-section" id="progressSection" hidden>
+          <div class="progress-meta">
+            <span id="progressLabel">准备中</span>
+            <strong id="progressPercent">0%</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span id="progressBar"></span>
+          </div>
+          <div class="progress-stats">
+            <span id="progressCount">0 / 0</span>
+            <span id="progressRate">0.00 req/s</span>
+            <span id="progressEta">ETA --</span>
+          </div>
+        </section>
+
+        <section id="emptyState" class="empty-state">
+          <div class="signal-visual" aria-hidden="true">
+            <span style="height: 22%"></span>
+            <span style="height: 48%"></span>
+            <span style="height: 34%"></span>
+            <span style="height: 76%"></span>
+            <span style="height: 58%"></span>
+            <span style="height: 92%"></span>
+            <span style="height: 70%"></span>
+          </div>
+          <h3>等待测试任务</h3>
+          <p>配置完成后启动压测，指标将在此处更新。</p>
+        </section>
+
+        <section id="resultContent" hidden>
+          <div class="metric-grid">
+            <article class="metric-card accent-green">
+              <span>请求吞吐</span>
+              <strong id="requestThroughput">--</strong>
+              <small>req/s</small>
+            </article>
+            <article class="metric-card accent-gold">
+              <span>输出吞吐</span>
+              <strong id="outputThroughput">--</strong>
+              <small>token/s</small>
+            </article>
+            <article class="metric-card accent-blue">
+              <span>平均 TTFT</span>
+              <strong id="meanTtft">--</strong>
+              <small>ms</small>
+            </article>
+            <article class="metric-card accent-coral">
+              <span>平均 TPOT</span>
+              <strong id="meanTpot">--</strong>
+              <small>ms</small>
+            </article>
+            <article class="metric-card">
+              <span>成功请求</span>
+              <strong id="successfulRequests">--</strong>
+              <small id="requestTotal">total</small>
+            </article>
+            <article class="metric-card">
+              <span>投机接受率</span>
+              <strong id="acceptanceRate">--</strong>
+              <small>draft token</small>
+            </article>
+          </div>
+
+          <div class="detail-band">
+            <div class="chart-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">延迟分布</p>
+                  <h3>P50 / P90 / P99</h3>
+                </div>
+                <span id="chartUnit">毫秒</span>
+              </div>
+              <canvas id="latencyChart" height="230"></canvas>
+            </div>
+
+            <div class="run-list-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">批次</p>
+                  <h3>组合结果</h3>
+                </div>
+                <a id="csvDownload" class="text-button" href="#" hidden>下载 CSV</a>
+              </div>
+              <div class="run-list" id="runList"></div>
+            </div>
+          </div>
+
+          <div class="warning-box" id="warningBox" hidden></div>
+        </section>
+
+        <section class="history-section">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">最近任务</p>
+              <h3>运行记录</h3>
+            </div>
+            <button class="icon-button" id="refreshButton" type="button" title="刷新记录">
+              ↻
+            </button>
+          </div>
+          <div class="history-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>任务</th>
+                  <th>负载</th>
+                  <th>组合数</th>
+                  <th>状态</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="historyBody">
+                <tr>
+                  <td colspan="5" class="table-empty">暂无运行记录</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
