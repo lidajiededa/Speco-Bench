@@ -93,3 +93,50 @@ MATH-500 and HumanEval prompts follow the formatting used by AngelSlim's
 `tools/dflash_benchmark.py`. MT-Bench preserves both turns. MBPP uses the same
 plain task prompt as that benchmark and filters the official sanitized test
 split (`task_id` 11 through 510).
+
+## Image VLM datasets
+
+`prepare_multimodal_datasets.py` supports four complementary image-only VLM
+workloads. It deliberately excludes audio and video:
+
+| Short name | Hugging Face dataset | Split | Workload |
+| --- | --- | --- | --- |
+| `ai2d` | `lmms-lab/ai2d` | test | Scientific diagrams and multiple choice |
+| `chartqa` | `HuggingFaceM4/ChartQA` | test | Chart reading and visual reasoning |
+| `textvqa` | `lmms-lab/textvqa` | validation | OCR and text understanding in natural images |
+| `mmmu` | `MMMU/MMMU` | validation | Multi-discipline, single- and multi-image reasoning |
+
+AI2D is a compact starting point, ChartQA isolates chart workloads, TextVQA
+stresses OCR, and MMMU supplies the broadest and most difficult mix. Review each
+dataset card and license before redistributing downloaded files.
+
+Install the optional preparation dependencies and download one or more datasets:
+
+```bash
+pip install -e '.[multimodal]'
+python3 prepare_multimodal_datasets.py --datasets ai2d chartqa
+```
+
+For a quick smoke dataset, cap each selected dataset independently:
+
+```bash
+python3 prepare_multimodal_datasets.py \
+  --datasets ai2d chartqa textvqa mmmu \
+  --limit 100 \
+  --overwrite
+```
+
+The resulting layout is the same layout discovered by the CLI and Web console:
+
+```text
+dataset/ai2d/
+├── images/
+│   ├── 000000_1.jpg
+│   └── ...
+└── question.jsonl
+```
+
+Each JSONL row uses `prompt`, `images`, `max_tokens`, and reference metadata.
+Image paths are relative to `question.jsonl`; Speco-Bench converts them to data
+URLs immediately before benchmarking. Downloaded `dataset/*/images/` directories
+are ignored by Git because the datasets are large and have their own licenses.

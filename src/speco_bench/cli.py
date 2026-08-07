@@ -47,6 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--random-input-len", type=int, default=1024)
     run.add_argument("--random-output-len", type=int, default=128)
     run.add_argument("--random-range-ratio", type=float, default=0.0)
+    run.add_argument("--random-image-width", type=int)
+    run.add_argument("--random-image-height", type=int)
+    run.add_argument("--random-images-per-prompt", type=int, default=1)
     run.add_argument(
         "--tokenizer",
         help="tokenizer name or path for random prompts (default: --model)",
@@ -114,6 +117,9 @@ async def _run_benchmark(args: argparse.Namespace) -> int:
         random_input_len=args.random_input_len,
         random_output_len=args.random_output_len,
         random_range_ratio=args.random_range_ratio,
+        random_image_width=args.random_image_width,
+        random_image_height=args.random_image_height,
+        random_images_per_prompt=args.random_images_per_prompt,
         tokenizer=args.tokenizer,
         trust_remote_code=args.trust_remote_code,
         ignore_eos=args.ignore_eos,

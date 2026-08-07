@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import math
 import random
+import struct
+import zlib
 from typing import Any, Protocol
 
 from .models import BenchmarkRequest
@@ -100,6 +104,36 @@ def _length_bounds(length: int, range_ratio: float) -> tuple[int, int]:
     return lower, upper
 
 
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    checksum = binascii.crc32(chunk_type + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", checksum)
+
+
+def generate_random_image_data_url(width: int, height: int, *, seed: int) -> str:
+    """Build a deterministic RGB PNG without an image-library dependency."""
+
+    if width < 1 or height < 1:
+        raise ValueError("random image dimensions must be at least 1 pixel")
+    if width > 16384 or height > 16384:
+        raise ValueError("random image dimensions cannot exceed 16384 pixels")
+
+    scanlines = bytearray()
+    for y in range(height):
+        red = (seed * 37 + y * 3) % 256
+        green = (seed * 67 + y * 5) % 256
+        blue = (seed * 97 + y * 7) % 256
+        scanlines.extend(b"\x00")
+        scanlines.extend(bytes((red, green, blue)) * width)
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(bytes(scanlines), level=6))
+        + _png_chunk(b"IEND", b"")
+    )
+    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+
+
 def generate_random_requests(
     tokenizer: TokenizerLike,
     *,
@@ -108,6 +142,9 @@ def generate_random_requests(
     output_length: int,
     range_ratio: float,
     seed: int,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    images_per_prompt: int = 1,
 ) -> list[BenchmarkRequest]:
     """Generate reproducible synthetic prompts with tokenizer-verified lengths."""
 
@@ -119,6 +156,12 @@ def generate_random_requests(
         raise ValueError("random_output_len must be at least 1")
     if not 0 <= range_ratio < 1:
         raise ValueError("random_range_ratio must be in [0, 1)")
+    if (image_width is None) != (image_height is None):
+        raise ValueError("random image width and height must be set together")
+    if images_per_prompt < 1:
+        raise ValueError("images_per_prompt must be at least 1")
+    if image_width is None and images_per_prompt != 1:
+        raise ValueError("images_per_prompt requires random image dimensions")
 
     special_tokens = int(tokenizer.num_special_tokens_to_add(pair=False))
     input_lower, input_upper = _length_bounds(input_length, range_ratio)
@@ -156,18 +199,46 @@ def generate_random_requests(
                 "tokenizer special-token accounting changed while generating "
                 f"request {request_id}: expected {requested_input_tokens}, got {total_tokens}"
             )
+        metadata = {
+            "dataset": "random",
+            "requested_input_tokens": requested_input_tokens,
+            "prompt_tokens_without_specials": prompt_tokens,
+            "requested_output_tokens": requested_output_tokens,
+            "seed": seed,
+        }
+        messages = None
+        if image_width is not None and image_height is not None:
+            content: list[dict[str, Any]] = []
+            for image_index in range(images_per_prompt):
+                image_seed = seed + request_id * images_per_prompt + image_index
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": generate_random_image_data_url(
+                                image_width,
+                                image_height,
+                                seed=image_seed,
+                            )
+                        },
+                    }
+                )
+            content.append({"type": "text", "text": prompt})
+            messages = [{"role": "user", "content": content}]
+            metadata.update(
+                {
+                    "image_width": image_width,
+                    "image_height": image_height,
+                    "images_per_prompt": images_per_prompt,
+                }
+            )
         requests.append(
             BenchmarkRequest(
                 request_id=request_id,
-                prompt=prompt,
+                prompt=prompt if messages is None else None,
+                messages=messages,
                 max_tokens=requested_output_tokens,
-                metadata={
-                    "dataset": "random",
-                    "requested_input_tokens": requested_input_tokens,
-                    "prompt_tokens_without_specials": prompt_tokens,
-                    "requested_output_tokens": requested_output_tokens,
-                    "seed": seed,
-                },
+                metadata=metadata,
             )
         )
     return requests

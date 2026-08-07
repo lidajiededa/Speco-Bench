@@ -1,15 +1,118 @@
 from __future__ import annotations
 
+import base64
+import copy
 import json
+import mimetypes
 import random
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+from urllib.parse import unquote, urlparse
 
 from .models import BenchmarkRequest
 
 
 class DatasetError(ValueError):
     pass
+
+
+def _local_image_data_url(
+    reference: str,
+    *,
+    base_dir: Path,
+    request_id: int,
+) -> str:
+    if reference.startswith(("data:", "http://", "https://")):
+        return reference
+
+    if reference.startswith("file://"):
+        parsed = urlparse(reference)
+        image_path = Path(unquote(parsed.path))
+    else:
+        image_path = Path(reference).expanduser()
+        if not image_path.is_absolute():
+            image_path = base_dir / image_path
+    image_path = image_path.resolve()
+    if not image_path.is_file():
+        raise DatasetError(f"record {request_id} image does not exist: {image_path}")
+
+    mime_type, _ = mimetypes.guess_type(image_path.name)
+    if not mime_type or not mime_type.startswith("image/"):
+        raise DatasetError(
+            f"record {request_id} has an unsupported image type: {image_path}"
+        )
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _normalize_image_reference(
+    value: Any,
+    *,
+    base_dir: Path,
+    request_id: int,
+) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {
+            "url": _local_image_data_url(
+                value,
+                base_dir=base_dir,
+                request_id=request_id,
+            )
+        }
+    if not isinstance(value, dict) or not isinstance(value.get("url"), str):
+        raise DatasetError(
+            f"record {request_id} image_url must be a string or an object with a URL"
+        )
+    normalized = dict(value)
+    normalized["url"] = _local_image_data_url(
+        value["url"],
+        base_dir=base_dir,
+        request_id=request_id,
+    )
+    return normalized
+
+
+def _normalize_messages(
+    messages: Any,
+    *,
+    base_dir: Path,
+    request_id: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(messages, list) or not messages:
+        raise DatasetError(f"record {request_id} messages must be a non-empty list")
+    normalized = copy.deepcopy(messages)
+    for message in normalized:
+        if not isinstance(message, dict) or not isinstance(message.get("role"), str):
+            raise DatasetError(f"record {request_id} contains an invalid message")
+        content = message.get("content")
+        if isinstance(content, str):
+            continue
+        if not isinstance(content, list):
+            raise DatasetError(
+                f"record {request_id} message content must be a string or list"
+            )
+        for part in content:
+            if not isinstance(part, dict) or not isinstance(part.get("type"), str):
+                raise DatasetError(
+                    f"record {request_id} contains an invalid message content part"
+                )
+            if part["type"] == "image_url":
+                part["image_url"] = _normalize_image_reference(
+                    part.get("image_url"),
+                    base_dir=base_dir,
+                    request_id=request_id,
+                )
+    return normalized
+
+
+def request_has_images(request: BenchmarkRequest) -> bool:
+    return any(
+        isinstance(part, dict) and part.get("type") == "image_url"
+        for message in request.messages or []
+        if isinstance(message, dict) and isinstance(message.get("content"), list)
+        for part in message["content"]
+    )
 
 
 def _read_records(path: Path) -> list[dict[str, Any]]:
@@ -51,24 +154,63 @@ def _normalize_record(
     record: dict[str, Any],
     request_id: int,
     max_tokens_override: int | None,
+    *,
+    base_dir: Path | None = None,
 ) -> BenchmarkRequest:
+    base_dir = (base_dir or Path.cwd()).resolve()
     prompt = record.get("prompt")
     messages = record.get("messages")
+    image_value = record.get("image")
+    images_value = record.get("images")
+    if image_value is not None and images_value is not None:
+        raise DatasetError(f"record {request_id} cannot contain both 'image' and 'images'")
+    image_references = images_value if images_value is not None else image_value
+    if image_references is not None:
+        if messages is not None:
+            raise DatasetError(
+                f"record {request_id} cannot combine 'messages' with 'image' or 'images'"
+            )
+        if not isinstance(prompt, str):
+            raise DatasetError(
+                f"record {request_id} image shorthand requires a string prompt"
+            )
+        if not isinstance(image_references, list):
+            image_references = [image_references]
+        if not image_references:
+            raise DatasetError(f"record {request_id} images must not be empty")
+        content = [
+            {
+                "type": "image_url",
+                "image_url": _normalize_image_reference(
+                    reference,
+                    base_dir=base_dir,
+                    request_id=request_id,
+                ),
+            }
+            for reference in image_references
+        ]
+        content.append({"type": "text", "text": prompt})
+        messages = [{"role": "user", "content": content}]
+        prompt = None
     if (prompt is None) == (messages is None):
         raise DatasetError(
             f"record {request_id} must contain exactly one of 'prompt' or 'messages'"
         )
     if prompt is not None and not isinstance(prompt, str):
         raise DatasetError(f"record {request_id} prompt must be a string")
-    if messages is not None and not isinstance(messages, list):
-        raise DatasetError(f"record {request_id} messages must be a list")
+    if messages is not None:
+        messages = _normalize_messages(
+            messages,
+            base_dir=base_dir,
+            request_id=request_id,
+        )
 
     row_max_tokens = record.get("max_tokens", 256)
     max_tokens = max_tokens_override if max_tokens_override is not None else row_max_tokens
     if not isinstance(max_tokens, int) or max_tokens < 1:
         raise DatasetError(f"record {request_id} max_tokens must be a positive integer")
 
-    reserved = {"prompt", "messages", "max_tokens", "metadata"}
+    reserved = {"prompt", "messages", "image", "images", "max_tokens", "metadata"}
     metadata = dict(record.get("metadata") or {})
     metadata.update({key: value for key, value in record.items() if key not in reserved})
     return BenchmarkRequest(
@@ -103,7 +245,12 @@ def load_dataset(
         selected = [records[indices[index % len(indices)]] for index in range(target)]
 
     return [
-        _normalize_record(record, request_id, max_tokens)
+        _normalize_record(
+            record,
+            request_id,
+            max_tokens,
+            base_dir=path.resolve().parent,
+        )
         for request_id, record in enumerate(selected)
     ]
 
@@ -213,4 +360,3 @@ def prepare_dataset_file(
         for record in prepared:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return len(prepared)
-

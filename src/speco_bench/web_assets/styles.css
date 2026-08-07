@@ -269,6 +269,14 @@ select {
   gap: 14px;
 }
 
+.random-image-fields {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+  border-left: 3px solid var(--blue);
+  background: var(--blue-soft);
+}
+
 #datasetFields[hidden],
 #randomFields[hidden] {
   display: none;

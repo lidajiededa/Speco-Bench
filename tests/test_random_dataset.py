@@ -1,6 +1,11 @@
+import base64
+import struct
 import unittest
 
-from speco_bench.random_dataset import generate_random_requests
+from speco_bench.random_dataset import (
+    generate_random_image_data_url,
+    generate_random_requests,
+)
 
 
 class CharacterTokenizer:
@@ -81,6 +86,36 @@ class RandomDatasetTests(unittest.TestCase):
                 range_ratio=1,
                 seed=0,
             )
+
+    def test_random_image_has_requested_png_dimensions(self):
+        data_url = generate_random_image_data_url(321, 123, seed=7)
+        png = base64.b64decode(data_url.split(",", 1)[1])
+
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", png[16:24]), (321, 123))
+
+    def test_generates_multimodal_random_requests(self):
+        requests = generate_random_requests(
+            CharacterTokenizer(),
+            num_prompts=2,
+            input_length=16,
+            output_length=8,
+            range_ratio=0,
+            seed=3,
+            image_width=64,
+            image_height=48,
+            images_per_prompt=2,
+        )
+
+        self.assertTrue(all(request.prompt is None for request in requests))
+        for request in requests:
+            content = request.messages[0]["content"]
+            self.assertEqual([part["type"] for part in content], ["image_url", "image_url", "text"])
+            self.assertEqual(request.metadata["image_width"], 64)
+            self.assertEqual(request.metadata["image_height"], 48)
+        first_url = requests[0].messages[0]["content"][0]["image_url"]["url"]
+        second_url = requests[1].messages[0]["content"][0]["image_url"]["url"]
+        self.assertNotEqual(first_url, second_url)
 
 
 if __name__ == "__main__":

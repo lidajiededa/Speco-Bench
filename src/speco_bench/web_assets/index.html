@@ -129,6 +129,27 @@
                 </div>
               </label>
               <label class="toggle-row">
+                <input id="randomImagesToggle" name="random_images" type="checkbox">
+                <span class="toggle"></span>
+                <span>添加随机图像</span>
+              </label>
+              <div id="randomImageFields" class="random-image-fields" hidden>
+                <div class="field-pair">
+                  <label class="field">
+                    <span>图像宽度（px）</span>
+                    <input name="random_image_width" type="number" min="1" max="16384" value="1024">
+                  </label>
+                  <label class="field">
+                    <span>图像高度（px）</span>
+                    <input name="random_image_height" type="number" min="1" max="16384" value="1024">
+                  </label>
+                </div>
+                <label class="field">
+                  <span>每条请求图片数</span>
+                  <input name="random_images_per_prompt" type="number" min="1" value="1">
+                </label>
+              </div>
+              <label class="toggle-row">
                 <input name="trust_remote_code" type="checkbox">
                 <span class="toggle"></span>
                 <span>Trust remote code</span>

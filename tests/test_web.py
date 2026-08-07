@@ -109,6 +109,9 @@ class WebJobManagerTests(unittest.IsolatedAsyncioTestCase):
                 "num_prompts": ["5"],
                 "random_input_len": 128,
                 "random_output_len": 32,
+                "random_image_width": 640,
+                "random_image_height": 480,
+                "random_images_per_prompt": 2,
             }
         )
         await job.task
@@ -118,6 +121,9 @@ class WebJobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.tokenizer, "/models/local-model")
         self.assertIsNone(config.dataset_path)
         self.assertEqual(config.num_prompts, 5)
+        self.assertEqual(config.random_image_width, 640)
+        self.assertEqual(config.random_image_height, 480)
+        self.assertEqual(config.random_images_per_prompt, 2)
 
     async def test_runs_dataset_concurrency_matrix_and_writes_csv(self):
         job = await self.manager.create_job(

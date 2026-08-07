@@ -14,6 +14,7 @@
 - 请求级 `requests.jsonl` 与汇总 `summary.json`
 - ShareGPT、Alpaca、OpenAI messages、prompt 格式转换
 - 数据集与 tokenizer 定长随机输入两种压测模式
+- 本地/远程单图与多图 VLM 数据集、指定分辨率随机图像
 - 本地 Web 控制台、批量任务进度与结果下载
 
 ## 安装
@@ -49,6 +50,23 @@ speco-bench prepare \
 ```
 
 `--format` 支持 `auto`、`prompt`、`messages`、`sharegpt`、`alpaca`。ShareGPT 数据末尾已有的 assistant 参考答案会被移除，只保留待模型回答的上下文。
+
+图片数据集可以使用简写格式。`images` 中的相对路径以 JSONL 文件所在目录为
+基准，也可以使用绝对路径、`file://`、HTTP(S) 或 `data:` URL：
+
+```json
+{"prompt":"比较两张图中的趋势","images":["images/a.jpg","images/b.jpg"],"max_tokens":256}
+```
+
+需要精确控制图文顺序或图片 `detail` 时，可以直接写 OpenAI messages：
+
+```json
+{"messages":[{"role":"user","content":[{"type":"text","text":"先看这张图"},{"type":"image_url","image_url":{"url":"images/chart.png","detail":"high"}},{"type":"text","text":"最高点是多少？"}]}],"max_tokens":128}
+```
+
+本地图片会在加载数据集时编码成 data URL。多模态请求只支持
+`--endpoint-type chat`。推荐的图片 VLM 数据集和下载方式见
+[`DATASETS.md`](DATASETS.md)。
 
 仓库内置的五个评测数据集统一位于
 `dataset/<dataset_name>/question.jsonl`，具体列表和重建方式见
@@ -91,6 +109,28 @@ Hugging Face 名称或本地路径，可另外传入 `--tokenizer /path/to/token
 `--ignore-eos`，才能让服务端持续生成到请求长度。严格比较输入长度时建议
 使用 `--endpoint-type completions`；chat 端点还会由服务端加入 chat
 template token，因此服务端统计的总输入 token 会高于随机 prompt 本身。
+
+随机 VLM 请求在上述参数之外指定图片宽高即可：
+
+```bash
+speco-bench run \
+  --base-url http://127.0.0.1:8000 \
+  --model qwen-vl-serving \
+  --tokenizer /path/to/qwen-vl \
+  --dataset-name random \
+  --endpoint-type chat \
+  --random-input-len 256 \
+  --random-output-len 128 \
+  --random-image-width 1280 \
+  --random-image-height 720 \
+  --random-images-per-prompt 1 \
+  --num-prompts 100 \
+  --concurrency 8
+```
+
+每条请求都会生成内容不同但可由 `--seed` 复现的 RGB PNG；不需要 Pillow。
+`--random-input-len` 只约束文字部分。服务端上报的 prompt token 还会包含视觉
+token 和 chat template token，因此跨模型比较时应固定模型、分辨率和图片数。
 
 ## 多数据集并发矩阵
 
@@ -214,6 +254,7 @@ speco-bench web \
 
 - 选择一个或多个内置数据集，也可以填写服务器本地 JSON/JSONL 路径；
 - 使用随机定长输入，并分别填写服务模型名和 tokenizer / 模型路径；
+- 为随机输入开启图片，并设置宽度、高度与每条请求图片数；
 - 一次填写多个并发数，以及与其一一对应的请求数；
 - 点击任意组合切换该组合的吞吐与独立量程延迟分布；
 - 查看投机接受率、平均接受长度和所有草稿位置的平均接受率；

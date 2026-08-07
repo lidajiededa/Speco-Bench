@@ -18,6 +18,10 @@ dependencies = [
 random = [
   "transformers>=4.45,<6",
 ]
+multimodal = [
+  "datasets>=3,<5",
+  "Pillow>=10,<13",
+]
 
 [project.scripts]
 speco-bench = "speco_bench.cli:main"

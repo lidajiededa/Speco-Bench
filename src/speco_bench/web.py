@@ -273,6 +273,23 @@ class WebJobManager:
                         "random_range_ratio",
                         default=0.0,
                     ),
+                    random_image_width=(
+                        _integer(payload, "random_image_width")
+                        if dataset_name == "random"
+                        else None
+                    ),
+                    random_image_height=(
+                        _integer(payload, "random_image_height")
+                        if dataset_name == "random"
+                        else None
+                    ),
+                    random_images_per_prompt=(
+                        _integer_default(
+                            payload,
+                            "random_images_per_prompt",
+                            default=1,
+                        )
+                    ),
                     tokenizer=_optional_text(payload, "tokenizer"),
                     trust_remote_code=_boolean(
                         payload,
@@ -297,6 +314,13 @@ class WebJobManager:
             "num_prompts": num_prompts_values,
             "endpoint_type": endpoint_type,
             "tokenizer": _optional_text(payload, "tokenizer"),
+            "random_image_width": _integer(payload, "random_image_width"),
+            "random_image_height": _integer(payload, "random_image_height"),
+            "random_images_per_prompt": _integer_default(
+                payload,
+                "random_images_per_prompt",
+                default=1,
+            ),
             "total_runs": len(specs),
         }
         return specs, configuration

@@ -8,6 +8,8 @@ const datasetFields = document.querySelector("#datasetFields");
 const randomFields = document.querySelector("#randomFields");
 const rangeRatio = document.querySelector("#rangeRatio");
 const rangeRatioValue = document.querySelector("#rangeRatioValue");
+const randomImagesToggle = document.querySelector("#randomImagesToggle");
+const randomImageFields = document.querySelector("#randomImageFields");
 const progressSection = document.querySelector("#progressSection");
 const emptyState = document.querySelector("#emptyState");
 const resultContent = document.querySelector("#resultContent");
@@ -89,6 +91,19 @@ function syncMode() {
   form.elements.random_output_len.disabled = !random;
   form.elements.random_range_ratio.disabled = !random;
   form.elements.trust_remote_code.disabled = !random;
+  form.elements.random_images.disabled = !random;
+  syncRandomImages();
+}
+
+function syncRandomImages() {
+  const enabled = selectedMode() === "random" && randomImagesToggle.checked;
+  randomImageFields.hidden = !enabled;
+  form.elements.random_image_width.disabled = !enabled;
+  form.elements.random_image_height.disabled = !enabled;
+  form.elements.random_images_per_prompt.disabled = !enabled;
+  if (enabled && form.elements.endpoint_type.value !== "chat") {
+    form.elements.endpoint_type.value = "chat";
+  }
 }
 
 function buildPayload() {
@@ -134,6 +149,13 @@ function buildPayload() {
     random_input_len: numberValue(data, "random_input_len", 1024),
     random_output_len: numberValue(data, "random_output_len", 128),
     random_range_ratio: numberValue(data, "random_range_ratio", 0),
+    random_image_width: numberValue(data, "random_image_width"),
+    random_image_height: numberValue(data, "random_image_height"),
+    random_images_per_prompt: numberValue(
+      data,
+      "random_images_per_prompt",
+      1,
+    ),
     trust_remote_code: data.get("trust_remote_code") === "on",
     ignore_eos: data.get("ignore_eos") === "on",
     temperature: numberValue(data, "temperature", 0),
@@ -614,6 +636,7 @@ cancelButton.addEventListener("click", async () => {
 form.querySelectorAll('input[name="dataset_name"]').forEach((input) => {
   input.addEventListener("change", syncMode);
 });
+randomImagesToggle.addEventListener("change", syncRandomImages);
 
 rangeRatio.addEventListener("input", () => {
   rangeRatioValue.value = `${Math.round(Number(rangeRatio.value) * 100)}%`;

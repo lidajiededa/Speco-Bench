@@ -25,6 +25,9 @@ class BenchmarkConfig:
     random_input_len: int = 1024
     random_output_len: int = 128
     random_range_ratio: float = 0.0
+    random_image_width: int | None = None
+    random_image_height: int | None = None
+    random_images_per_prompt: int = 1
     tokenizer: str | None = None
     trust_remote_code: bool = False
     ignore_eos: bool = False
@@ -59,6 +62,34 @@ class BenchmarkConfig:
             raise ValueError("random_output_len must be at least 1")
         if not 0 <= self.random_range_ratio < 1:
             raise ValueError("random_range_ratio must be in [0, 1)")
+        image_dimensions = (self.random_image_width, self.random_image_height)
+        if (image_dimensions[0] is None) != (image_dimensions[1] is None):
+            raise ValueError(
+                "random_image_width and random_image_height must be set together"
+            )
+        if any(value is not None and value < 1 for value in image_dimensions):
+            raise ValueError("random image dimensions must be at least 1 pixel")
+        if any(value is not None and value > 16384 for value in image_dimensions):
+            raise ValueError("random image dimensions cannot exceed 16384 pixels")
+        if self.random_images_per_prompt < 1:
+            raise ValueError("random_images_per_prompt must be at least 1")
+        if self.random_image_width is None and self.random_images_per_prompt != 1:
+            raise ValueError(
+                "random_images_per_prompt requires random image dimensions"
+            )
+        if (
+            self.random_image_width is not None
+            and self.random_image_height is not None
+            and self.random_image_width
+            * self.random_image_height
+            * self.random_images_per_prompt
+            > 100_000_000
+        ):
+            raise ValueError("random images cannot exceed 100 million pixels per prompt")
+        if self.random_image_width is not None and self.dataset_name != "random":
+            raise ValueError("random image dimensions require the random dataset")
+        if self.random_image_width is not None and self.endpoint_type != "chat":
+            raise ValueError("random multimodal requests require the chat endpoint")
         if self.warmup_requests < 0:
             raise ValueError("warmup_requests cannot be negative")
         if self.request_timeout_seconds <= 0:
