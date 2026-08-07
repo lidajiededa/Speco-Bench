@@ -101,16 +101,18 @@ workloads. It deliberately excludes audio and video:
 
 | Short name | Hugging Face dataset | Split | Workload |
 | --- | --- | --- | --- |
-| `ai2d` | `lmms-lab/ai2d` | test | Scientific diagrams and multiple choice |
-| `chartqa` | `HuggingFaceM4/ChartQA` | test | Chart reading and visual reasoning |
-| `textvqa` | `lmms-lab/textvqa` | validation | OCR and text understanding in natural images |
+| `ai2d` | `lmms-lab-encoder/ai2d` | test | Scientific diagrams and multiple choice |
+| `chartqa` | `vis-nlp/ChartQA` | human test | Chart reading and visual reasoning |
+| `textvqa` | `facebook/TextVQA` | validation | OCR and text understanding in natural images |
 | `mmmu` | `MMMU/MMMU` | validation | Multi-discipline, single- and multi-image reasoning |
 
 AI2D is a compact starting point, ChartQA isolates chart workloads, TextVQA
 stresses OCR, and MMMU supplies the broadest and most difficult mix. Review each
 dataset card and license before redistributing downloaded files.
 
-Install the optional preparation dependencies and download one or more datasets:
+The local development workspace is prepared with 100 records from each dataset,
+so all four names appear alongside the five text datasets in the Web console.
+Install the optional preparation dependencies and reproduce one or more datasets:
 
 ```bash
 pip install -e '.[multimodal]'
@@ -121,6 +123,16 @@ For a quick smoke dataset, cap each selected dataset independently:
 
 ```bash
 python3 prepare_multimodal_datasets.py \
+  --datasets ai2d chartqa textvqa mmmu \
+  --limit 100 \
+  --overwrite
+```
+
+Raw downloads are cached under `raw/multimodal/`; a repeat run reuses them.
+In regions where the Hugging Face endpoint is slow, select a compatible mirror:
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com python3 prepare_multimodal_datasets.py \
   --datasets ai2d chartqa textvqa mmmu \
   --limit 100 \
   --overwrite
@@ -138,5 +150,8 @@ dataset/ai2d/
 
 Each JSONL row uses `prompt`, `images`, `max_tokens`, and reference metadata.
 Image paths are relative to `question.jsonl`; Speco-Bench converts them to data
-URLs immediately before benchmarking. Downloaded `dataset/*/images/` directories
-are ignored by Git because the datasets are large and have their own licenses.
+URLs immediately before benchmarking. Downloaded images, generated VLM JSONL
+manifests, and raw caches are ignored by Git because the datasets are large and
+have their own licenses. The preparation script remains the reproducible
+integration point; once it finishes, both the CLI short names and Web console
+discover the generated datasets automatically.

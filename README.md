@@ -68,7 +68,7 @@ speco-bench prepare \
 `--endpoint-type chat`。推荐的图片 VLM 数据集和下载方式见
 [`DATASETS.md`](DATASETS.md)。
 
-仓库内置的五个评测数据集统一位于
+仓库内置的文本评测集以及本地准备好的图片评测集统一位于
 `dataset/<dataset_name>/question.jsonl`，具体列表和重建方式见
 [`DATASETS.md`](DATASETS.md)。
 

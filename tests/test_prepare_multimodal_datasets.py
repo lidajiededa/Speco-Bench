@@ -21,6 +21,20 @@ class PrepareMultimodalDatasetTests(unittest.TestCase):
         self.assertEqual(images, ["diagram"])
         self.assertEqual(metadata["reference"], "A")
 
+    def test_converts_ai2d_numeric_answer_index_to_letter(self):
+        _, _, metadata = _build_prompt_and_metadata(
+            "ai2d",
+            {
+                "question": "Which option is correct?",
+                "options": ["first", "second"],
+                "answer": "1",
+                "image": "diagram",
+            },
+            source_index=0,
+        )
+
+        self.assertEqual(metadata["reference"], "B")
+
     def test_builds_mmmu_multi_image_prompt(self):
         prompt, images, metadata = _build_prompt_and_metadata(
             "mmmu",
