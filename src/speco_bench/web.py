@@ -28,6 +28,7 @@ from .service import BenchmarkService
 
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+MAX_TASK_NAME_LENGTH = 80
 
 
 def _now() -> str:
@@ -48,6 +49,17 @@ def _optional_text(payload: dict[str, Any], key: str) -> str | None:
     if not isinstance(value, str):
         raise ValueError(f"{key} must be a string")
     return value.strip() or None
+
+
+def _task_directory_name(task_name: str, job_id: str) -> str:
+    safe_name = "".join(
+        character if character.isalnum() or character in "._-" else "-"
+        for character in task_name
+    )
+    while "--" in safe_name:
+        safe_name = safe_name.replace("--", "-")
+    safe_name = safe_name.strip("._-")[:60] or "task"
+    return f"{safe_name}-{job_id}"
 
 
 def _integer(
@@ -107,6 +119,7 @@ class WebRunSpec:
 @dataclass(slots=True)
 class WebJob:
     job_id: str
+    name: str
     status: str
     created_at: str
     configuration: dict[str, Any]
@@ -123,6 +136,7 @@ class WebJob:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.job_id,
+            "name": self.name,
             "status": self.status,
             "created_at": self.created_at,
             "started_at": self.started_at,
@@ -347,10 +361,26 @@ class WebJobManager:
                 + "-"
                 + uuid.uuid4().hex[:6]
             )
-            job_dir = self.output_root / job_id
+            task_name = _optional_text(payload, "task_name")
+            if task_name is not None:
+                if len(task_name) > MAX_TASK_NAME_LENGTH:
+                    raise ValueError(
+                        f"task_name must not exceed {MAX_TASK_NAME_LENGTH} characters"
+                    )
+                if any(ord(character) < 32 for character in task_name):
+                    raise ValueError("task_name must not contain control characters")
+            name = task_name or job_id
+            directory_name = (
+                _task_directory_name(task_name, job_id)
+                if task_name is not None
+                else job_id
+            )
+            job_dir = self.output_root / directory_name
             run_specs, configuration = self._build_run_specs(payload, job_dir)
+            configuration["task_name"] = name
             job = WebJob(
                 job_id=job_id,
+                name=name,
                 status="queued",
                 created_at=_now(),
                 configuration=configuration,

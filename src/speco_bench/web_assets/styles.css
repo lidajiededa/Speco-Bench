@@ -494,6 +494,12 @@ select {
   white-space: nowrap;
 }
 
+.run-id {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .eyebrow {
   margin: 0 0 5px;
   color: var(--muted);
@@ -938,6 +944,25 @@ tbody tr {
 
 tbody tr:hover td {
   background: #f7faf9;
+}
+
+.history-task-name,
+.history-task-id {
+  display: block;
+}
+
+.history-task-name {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.history-task-id {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .table-empty {

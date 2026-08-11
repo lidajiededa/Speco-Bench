@@ -148,6 +148,44 @@ class WebJobManagerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(job.progress["overall_percent"], 100)
 
+    async def test_custom_task_name_is_exposed_and_used_in_result_path(self):
+        job = await self.manager.create_job(
+            {
+                "task_name": "Qwen VL 基线 / 8并发",
+                "base_url": "http://localhost:8000",
+                "model": "model",
+                "dataset_name": "custom",
+                "datasets": ["gsm8k"],
+                "concurrencies": ["1"],
+                "num_prompts": ["1"],
+            }
+        )
+        await job.task
+
+        self.assertEqual(job.name, "Qwen VL 基线 / 8并发")
+        self.assertEqual(job.to_dict()["name"], job.name)
+        self.assertEqual(job.configuration["task_name"], job.name)
+        self.assertTrue(
+            Path(job.result_dir).name.startswith("Qwen-VL-基线-8并发-")
+        )
+
+    async def test_blank_task_name_falls_back_to_job_id(self):
+        job = await self.manager.create_job(
+            {
+                "task_name": "   ",
+                "base_url": "http://localhost:8000",
+                "model": "model",
+                "dataset_name": "custom",
+                "datasets": ["gsm8k"],
+                "concurrencies": ["1"],
+                "num_prompts": ["1"],
+            }
+        )
+        await job.task
+
+        self.assertEqual(job.name, job.job_id)
+        self.assertEqual(Path(job.result_dir).name, job.job_id)
+
     async def test_cancels_active_job(self):
         manager = WebJobManager(
             dataset_root=self.dataset_root,
@@ -200,7 +238,9 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_serves_console_and_configuration(self):
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
-        self.assertIn("Speco-Bench", await response.text())
+        page = await response.text()
+        self.assertIn("Speco-Bench", page)
+        self.assertIn('name="task_name"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)
@@ -223,6 +263,24 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         payload = await response.json()
         self.assertIn("exactly one value per concurrency", payload["error"])
+
+    async def test_rejects_task_name_over_length_limit(self):
+        response = await self.client.post(
+            "/api/jobs",
+            json={
+                "task_name": "x" * 81,
+                "base_url": "http://localhost:8000",
+                "model": "model",
+                "dataset_name": "custom",
+                "datasets": ["gsm8k"],
+                "concurrencies": ["1"],
+                "num_prompts": ["1"],
+            },
+        )
+
+        self.assertEqual(response.status, 400)
+        payload = await response.json()
+        self.assertIn("must not exceed 80 characters", payload["error"])
 
 
 if __name__ == "__main__":

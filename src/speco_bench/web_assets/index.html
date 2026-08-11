@@ -31,6 +31,15 @@
               <h2>服务</h2>
             </div>
             <label class="field">
+              <span>任务名称（可选）</span>
+              <input
+                name="task_name"
+                type="text"
+                maxlength="80"
+                placeholder="例如 Qwen-VL 基线测试"
+              >
+            </label>
+            <label class="field">
               <span>Base URL</span>
               <input
                 name="base_url"
@@ -254,6 +263,7 @@
           <div>
             <p class="eyebrow">当前任务</p>
             <h2 id="runTitle">尚未启动</h2>
+            <p class="run-id" id="runId" hidden></p>
           </div>
           <span class="status-badge idle" id="statusBadge">空闲</span>
         </div>

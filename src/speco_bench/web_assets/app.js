@@ -15,6 +15,7 @@ const emptyState = document.querySelector("#emptyState");
 const resultContent = document.querySelector("#resultContent");
 const statusBadge = document.querySelector("#statusBadge");
 const runTitle = document.querySelector("#runTitle");
+const runId = document.querySelector("#runId");
 const historyBody = document.querySelector("#historyBody");
 const refreshButton = document.querySelector("#refreshButton");
 const latencyCharts = {
@@ -137,6 +138,7 @@ function buildPayload() {
   }
 
   return {
+    task_name: String(data.get("task_name") || "").trim() || null,
     base_url: String(data.get("base_url") || "").trim(),
     model: String(data.get("model") || "").trim(),
     endpoint_type: String(data.get("endpoint_type")),
@@ -200,7 +202,11 @@ function updateStatus(job) {
   const label = statusLabels[job.status] || job.status;
   statusBadge.textContent = label;
   statusBadge.className = `status-badge ${job.status}`;
-  runTitle.textContent = `#${job.id}`;
+  const taskName = job.name || job.id;
+  runTitle.textContent = taskName;
+  runTitle.title = taskName === job.id ? "" : taskName;
+  runId.hidden = taskName === job.id;
+  runId.textContent = taskName === job.id ? "" : `任务 ID · ${job.id}`;
   const running = job.status === "queued" || job.status === "running";
   setRunning(running);
   activeJobId = running ? job.id : null;
@@ -525,8 +531,15 @@ function renderHistory(jobs) {
   for (const job of jobs) {
     const row = document.createElement("tr");
     const datasets = job.configuration.datasets.join(", ");
+    const taskName = job.name || job.id;
+    const idLine = taskName === job.id
+      ? ""
+      : `<span class="history-task-id">#${escapeHtml(job.id)}</span>`;
     row.innerHTML = `
-      <td>#${escapeHtml(job.id)}</td>
+      <td>
+        <strong class="history-task-name">${escapeHtml(taskName)}</strong>
+        ${idLine}
+      </td>
       <td>${escapeHtml(datasets)}</td>
       <td>${job.configuration.total_runs}</td>
       <td>${statusLabels[job.status] || escapeHtml(job.status)}</td>
