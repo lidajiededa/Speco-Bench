@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import uuid
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -339,23 +340,22 @@ class WebJobManager:
         }
         return specs, configuration
 
-    def _active_job(self) -> WebJob | None:
-        return next(
-            (
-                job
-                for job in reversed(list(self.jobs.values()))
-                if job.status not in TERMINAL_STATUSES
-            ),
-            None,
-        )
+    def _trim_history(self) -> None:
+        while len(self.jobs) > self.max_history:
+            oldest_terminal_id = next(
+                (
+                    job_id
+                    for job_id, job in self.jobs.items()
+                    if job.status in TERMINAL_STATUSES
+                ),
+                None,
+            )
+            if oldest_terminal_id is None:
+                return
+            del self.jobs[oldest_terminal_id]
 
     async def create_job(self, payload: dict[str, Any]) -> WebJob:
         async with self._lock:
-            active = self._active_job()
-            if active is not None:
-                raise RuntimeError(
-                    f"benchmark job {active.job_id} is already running"
-                )
             job_id = (
                 datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
                 + "-"
@@ -389,9 +389,7 @@ class WebJobManager:
                 csv_path=str(job_dir / "matrix.csv"),
             )
             self.jobs[job_id] = job
-            while len(self.jobs) > self.max_history:
-                oldest_id = next(iter(self.jobs))
-                del self.jobs[oldest_id]
+            self._trim_history()
             job.task = asyncio.create_task(self._execute(job))
             return job
 
@@ -505,6 +503,7 @@ class WebJobManager:
             job.error = f"{type(exc).__name__}: {exc}"
         finally:
             job.finished_at = _now()
+            self._trim_history()
 
     def get_job(self, job_id: str) -> WebJob:
         try:
@@ -575,8 +574,6 @@ async def _api_create_job(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid JSON body"}, status=400)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
-    except RuntimeError as exc:
-        return web.json_response({"error": str(exc)}, status=409)
     return web.json_response(job.to_dict(), status=202)
 
 
@@ -596,6 +593,44 @@ async def _api_cancel_job(request: web.Request) -> web.Response:
     return web.json_response(job.to_dict())
 
 
+def _write_results_archive(job: WebJob) -> Path:
+    archive_path = Path(job.result_dir or "") / "results.zip"
+    temporary_path = archive_path.with_name(
+        f".{archive_path.name}.{uuid.uuid4().hex}.tmp"
+    )
+    files: list[tuple[Path, str]] = []
+    csv_path = Path(job.csv_path or "")
+    if csv_path.is_file():
+        files.append((csv_path, "matrix.csv"))
+    for run in job.runs:
+        directory = (
+            f"{run['index']:02d}-{_slug(run['dataset'])}"
+            f"-concurrency-{run['concurrency']}"
+        )
+        for key, filename in (
+            ("summary_path", "summary.json"),
+            ("requests_path", "requests.jsonl"),
+        ):
+            path = Path(run.get(key, ""))
+            if path.is_file():
+                files.append((path, f"{directory}/{filename}"))
+    if not files:
+        raise FileNotFoundError("result files are not ready")
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(
+            temporary_path,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for path, archive_name in files:
+                archive.write(path, archive_name)
+        temporary_path.replace(archive_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return archive_path
+
+
 async def _api_job_file(request: web.Request) -> web.StreamResponse:
     try:
         job = _manager(request).get_job(request.match_info["job_id"])
@@ -605,6 +640,16 @@ async def _api_job_file(request: web.Request) -> web.StreamResponse:
     filename = request.match_info["filename"]
     if filename == "matrix.csv":
         path = Path(job.csv_path or "")
+    elif filename == "results.zip":
+        if job.status not in TERMINAL_STATUSES:
+            return web.json_response(
+                {"error": "result archive is not ready"},
+                status=409,
+            )
+        try:
+            path = await asyncio.to_thread(_write_results_archive, job)
+        except FileNotFoundError as exc:
+            return web.json_response({"error": str(exc)}, status=404)
     else:
         try:
             run_index_text, name = filename.split("-", 1)

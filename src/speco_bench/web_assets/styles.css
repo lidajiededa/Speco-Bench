@@ -886,6 +886,13 @@ select {
   text-decoration: none;
 }
 
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
 .warning-box {
   margin-top: 14px;
   padding: 12px 14px;

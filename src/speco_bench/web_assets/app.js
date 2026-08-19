@@ -27,7 +27,6 @@ const acceptancePanel = document.querySelector("#acceptancePanel");
 const acceptanceChart = document.querySelector("#acceptanceChart");
 const acceptanceValues = document.querySelector("#acceptanceValues");
 
-let activeJobId = null;
 let pollTimer = null;
 let selectedJob = null;
 let selectedRunIndex = null;
@@ -175,9 +174,8 @@ function buildPayload() {
   };
 }
 
-function setRunning(running) {
-  startButton.disabled = running;
-  cancelButton.hidden = !running;
+function setSubmitting(submitting) {
+  startButton.disabled = submitting;
 }
 
 function formatNumber(value, digits = 2) {
@@ -208,8 +206,7 @@ function updateStatus(job) {
   runId.hidden = taskName === job.id;
   runId.textContent = taskName === job.id ? "" : `任务 ID · ${job.id}`;
   const running = job.status === "queued" || job.status === "running";
-  setRunning(running);
-  activeJobId = running ? job.id : null;
+  cancelButton.hidden = !running;
 
   if (job.progress) {
     const progress = job.progress;
@@ -478,11 +475,25 @@ function renderResult(job) {
   const currentRun = selectedRunForJob(job);
   renderRuns(job, currentRun);
   const csvDownload = document.querySelector("#csvDownload");
+  const summaryDownload = document.querySelector("#summaryDownload");
+  const requestsDownload = document.querySelector("#requestsDownload");
+  const archiveDownload = document.querySelector("#archiveDownload");
   csvDownload.hidden = !job.runs.length;
   csvDownload.href = `/api/jobs/${job.id}/files/matrix.csv`;
+  const runFilesReady = Boolean(currentRun?.summary_path && currentRun?.requests_path);
+  summaryDownload.hidden = !runFilesReady;
+  requestsDownload.hidden = !runFilesReady;
+  if (runFilesReady) {
+    summaryDownload.href =
+      `/api/jobs/${job.id}/files/${currentRun.index}-summary.json`;
+    requestsDownload.href =
+      `/api/jobs/${job.id}/files/${currentRun.index}-requests.jsonl`;
+  }
+  const terminal = ["completed", "failed", "cancelled"].includes(job.status);
+  archiveDownload.hidden = !terminal || !job.runs.length;
+  archiveDownload.href = `/api/jobs/${job.id}/files/results.zip`;
 
   if (!currentRun?.report) {
-    const terminal = ["completed", "failed", "cancelled"].includes(job.status);
     const showDetails = terminal || Boolean(currentRun?.error);
     resultContent.hidden = !showDetails;
     emptyState.hidden = showDetails || job.status === "running";
@@ -565,43 +576,27 @@ async function refreshJobs() {
     const data = await api("/api/jobs");
     setServerState("控制台已连接", "connected");
     renderHistory(data.jobs);
-    const running = data.jobs.find(
-      (job) => job.status === "queued" || job.status === "running",
-    );
-    if (running) {
-      activeJobId = running.id;
-      selectJob(running);
-      startPolling();
-    } else if (selectedJob) {
+    if (selectedJob) {
       const updated = data.jobs.find((job) => job.id === selectedJob.id);
       if (updated) selectJob(updated);
     } else if (data.jobs.length) {
       selectJob(data.jobs[0]);
     }
-  } catch (error) {
-    setServerState("连接失败", "disconnected");
-    formError.textContent = error.message;
-  }
-}
-
-async function pollActiveJob() {
-  if (!activeJobId) return;
-  try {
-    const job = await api(`/api/jobs/${activeJobId}`);
-    selectJob(job);
-    if (!["queued", "running"].includes(job.status)) {
-      stopPolling();
-      await refreshJobs();
-    }
+    const hasRunningJobs = data.jobs.some(
+      (job) => job.status === "queued" || job.status === "running",
+    );
+    if (hasRunningJobs) startPolling();
+    else stopPolling();
   } catch (error) {
     stopPolling();
+    setServerState("连接失败", "disconnected");
     formError.textContent = error.message;
   }
 }
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = window.setInterval(pollActiveJob, 700);
+  pollTimer = window.setInterval(refreshJobs, 700);
 }
 
 function stopPolling() {
@@ -614,30 +609,32 @@ form.addEventListener("submit", async (event) => {
   formError.textContent = "";
   try {
     const payload = buildPayload();
-    setRunning(true);
+    setSubmitting(true);
     const job = await api("/api/jobs", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    activeJobId = job.id;
     selectJob(job);
     progressSection.hidden = false;
     emptyState.hidden = true;
     startPolling();
     await refreshJobs();
   } catch (error) {
-    setRunning(false);
     formError.textContent = error.message;
+  } finally {
+    setSubmitting(false);
   }
 });
 
 cancelButton.addEventListener("click", async () => {
-  if (!activeJobId) return;
+  if (
+    !selectedJob ||
+    !["queued", "running"].includes(selectedJob.status)
+  ) return;
   cancelButton.disabled = true;
   try {
-    const job = await api(`/api/jobs/${activeJobId}/cancel`, {method: "POST"});
+    const job = await api(`/api/jobs/${selectedJob.id}/cancel`, {method: "POST"});
     selectJob(job);
-    stopPolling();
     await refreshJobs();
   } catch (error) {
     formError.textContent = error.message;

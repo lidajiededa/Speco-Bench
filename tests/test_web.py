@@ -1,6 +1,8 @@
 import asyncio
+import io
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from aiohttp.test_utils import TestClient, TestServer
@@ -210,6 +212,34 @@ class WebJobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.runs[0]["status"], "cancelled")
         await manager.close()
 
+    async def test_runs_multiple_web_jobs_concurrently(self):
+        manager = WebJobManager(
+            dataset_root=self.dataset_root,
+            output_root=self.root / "parallel-results",
+            service=BlockingBenchmarkService(),
+        )
+        payload = {
+            "base_url": "http://localhost:8000",
+            "model": "model",
+            "dataset_name": "custom",
+            "datasets": ["gsm8k"],
+            "concurrencies": ["1"],
+            "num_prompts": ["1"],
+        }
+
+        first = await manager.create_job({**payload, "task_name": "first"})
+        second = await manager.create_job({**payload, "task_name": "second"})
+        await asyncio.sleep(0)
+
+        self.assertEqual(first.status, "running")
+        self.assertEqual(second.status, "running")
+        self.assertEqual(len(first.runs), 1)
+        self.assertEqual(len(second.runs), 1)
+        self.assertNotEqual(first.result_dir, second.result_dir)
+        await manager.cancel_job(first.job_id)
+        await manager.cancel_job(second.job_id)
+        await manager.close()
+
 
 class WebApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -281,6 +311,43 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         payload = await response.json()
         self.assertIn("must not exceed 80 characters", payload["error"])
+
+    async def test_downloads_request_results_and_complete_archive(self):
+        response = await self.client.post(
+            "/api/jobs",
+            json={
+                "task_name": "export",
+                "base_url": "http://localhost:8000",
+                "model": "model",
+                "dataset_name": "custom",
+                "datasets": ["gsm8k"],
+                "concurrencies": ["1"],
+                "num_prompts": ["1"],
+            },
+        )
+        job_payload = await response.json()
+        job = self.manager.get_job(job_payload["id"])
+        await job.task
+
+        response = await self.client.get(
+            f"/api/jobs/{job.job_id}/files/1-requests.jsonl"
+        )
+        self.assertEqual(response.status, 200)
+        self.assertIn('"generated_text": "done"', await response.text())
+
+        response = await self.client.get(
+            f"/api/jobs/{job.job_id}/files/results.zip"
+        )
+        self.assertEqual(response.status, 200)
+        with zipfile.ZipFile(io.BytesIO(await response.read())) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {
+                    "matrix.csv",
+                    "01-gsm8k-concurrency-1/summary.json",
+                    "01-gsm8k-concurrency-1/requests.jsonl",
+                },
+            )
 
 
 if __name__ == "__main__":
