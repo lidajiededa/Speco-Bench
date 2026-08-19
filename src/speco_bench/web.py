@@ -158,7 +158,7 @@ class WebJobManager:
         dataset_root: Path,
         output_root: Path,
         service: BenchmarkService | None = None,
-        max_history: int = 50,
+        max_history: int = 1000,
     ):
         self.dataset_root = dataset_root.resolve()
         self.output_root = output_root.resolve()
@@ -557,11 +557,67 @@ async def _api_configuration(request: web.Request) -> web.Response:
     )
 
 
+def _job_matches_query(job: WebJob, query: str) -> bool:
+    created = datetime.fromisoformat(job.created_at).astimezone()
+    searchable_values = (
+        job.name,
+        job.job_id,
+        job.created_at,
+        created.strftime("%Y-%m-%d %H:%M:%S"),
+        created.strftime("%Y/%m/%d %H:%M:%S"),
+        f"{created.year}/{created.month}/{created.day} {created:%H:%M:%S}",
+        f"{created.year}年{created.month}月{created.day}日 {created:%H:%M:%S}",
+    )
+    return query in " ".join(searchable_values).casefold()
+
+
 async def _api_jobs(request: web.Request) -> web.Response:
-    jobs = [
-        job.to_dict() for job in reversed(list(_manager(request).jobs.values()))
-    ]
-    return web.json_response({"jobs": jobs})
+    try:
+        page = int(request.query.get("page", "1"))
+        page_size = int(request.query.get("page_size", "10"))
+    except ValueError:
+        return web.json_response(
+            {"error": "page and page_size must be integers"},
+            status=400,
+        )
+    if page < 1 or page_size < 1:
+        return web.json_response(
+            {"error": "page and page_size must be positive"},
+            status=400,
+        )
+    if page_size > 100:
+        return web.json_response(
+            {"error": "page_size must not exceed 100"},
+            status=400,
+        )
+
+    manager = _manager(request)
+    query = request.query.get("q", "").strip().casefold()
+    jobs = list(reversed(manager.jobs.values()))
+    if query:
+        jobs = [job for job in jobs if _job_matches_query(job, query)]
+
+    total = len(jobs)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    page_jobs = jobs[start : start + page_size]
+    has_running_jobs = any(
+        job.status in {"queued", "running"} for job in manager.jobs.values()
+    )
+    return web.json_response(
+        {
+            "jobs": [job.to_dict() for job in page_jobs],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+                "query": request.query.get("q", "").strip(),
+            },
+            "has_running_jobs": has_running_jobs,
+        }
+    )
 
 
 async def _api_create_job(request: web.Request) -> web.Response:

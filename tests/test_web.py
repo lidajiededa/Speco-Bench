@@ -3,6 +3,7 @@ import io
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from aiohttp.test_utils import TestClient, TestServer
@@ -271,6 +272,7 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         page = await response.text()
         self.assertIn("Speco-Bench", page)
         self.assertIn('name="task_name"', page)
+        self.assertIn('id="historySearch"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)
@@ -311,6 +313,79 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         payload = await response.json()
         self.assertIn("must not exceed 80 characters", payload["error"])
+
+    async def test_paginates_and_searches_run_history(self):
+        jobs = []
+        for index in range(12):
+            response = await self.client.post(
+                "/api/jobs",
+                json={
+                    "task_name": f"Baseline {index:02d}",
+                    "base_url": "http://localhost:8000",
+                    "model": "model",
+                    "dataset_name": "custom",
+                    "datasets": ["gsm8k"],
+                    "concurrencies": ["1"],
+                    "num_prompts": ["1"],
+                },
+            )
+            payload = await response.json()
+            job = self.manager.get_job(payload["id"])
+            await job.task
+            jobs.append(job)
+
+        response = await self.client.get(
+            "/api/jobs", params={"page": "2", "page_size": "5"}
+        )
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["pagination"]["total"], 12)
+        self.assertEqual(payload["pagination"]["total_pages"], 3)
+        self.assertEqual(payload["pagination"]["page"], 2)
+        self.assertEqual(
+            [job["name"] for job in payload["jobs"]],
+            [
+                "Baseline 06",
+                "Baseline 05",
+                "Baseline 04",
+                "Baseline 03",
+                "Baseline 02",
+            ],
+        )
+        self.assertFalse(payload["has_running_jobs"])
+
+        response = await self.client.get(
+            "/api/jobs", params={"q": "BASELINE 1"}
+        )
+        payload = await response.json()
+        self.assertEqual(payload["pagination"]["total"], 2)
+        self.assertEqual(
+            [job["name"] for job in payload["jobs"]],
+            ["Baseline 11", "Baseline 10"],
+        )
+
+        jobs[0].created_at = "2024-03-05T01:02:03+00:00"
+        created = datetime.fromisoformat(jobs[0].created_at).astimezone()
+        displayed_time = (
+            f"{created.year}/{created.month}/{created.day} "
+            f"{created.hour:02d}:{created.minute:02d}"
+        )
+        response = await self.client.get(
+            "/api/jobs", params={"q": displayed_time}
+        )
+        payload = await response.json()
+        self.assertEqual(payload["pagination"]["total"], 1)
+        self.assertEqual(payload["jobs"][0]["name"], "Baseline 00")
+
+        response = await self.client.get(
+            "/api/jobs", params={"page": "99", "page_size": "5"}
+        )
+        payload = await response.json()
+        self.assertEqual(payload["pagination"]["page"], 3)
+        self.assertEqual(len(payload["jobs"]), 2)
+
+        response = await self.client.get("/api/jobs", params={"page": "0"})
+        self.assertEqual(response.status, 400)
 
     async def test_downloads_request_results_and_complete_archive(self):
         response = await self.client.post(

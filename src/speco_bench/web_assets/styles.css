@@ -31,6 +31,17 @@
   display: none !important;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -909,6 +920,33 @@ select {
   border-top: 1px solid var(--line);
 }
 
+.history-tools,
+.history-pagination,
+.pagination-controls {
+  display: flex;
+  align-items: center;
+}
+
+.history-tools {
+  gap: 8px;
+}
+
+.history-search input {
+  width: min(240px, 36vw);
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: white;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.history-search input:focus {
+  border-color: var(--green);
+  outline: 2px solid var(--green-soft);
+}
+
 .icon-button {
   display: grid;
   width: 32px;
@@ -920,8 +958,31 @@ select {
   font-size: 18px;
 }
 
+.icon-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
 .history-table-wrap {
   overflow-x: auto;
+}
+
+.history-pagination {
+  min-height: 48px;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pagination-controls {
+  gap: 8px;
+}
+
+#historyPageInfo {
+  min-width: 48px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 table {
@@ -1049,5 +1110,13 @@ tbody tr:hover td {
     align-items: flex-start;
     gap: 4px;
     flex-direction: column;
+  }
+
+  .history-section > .panel-heading {
+    align-items: flex-end;
+  }
+
+  .history-search input {
+    width: min(180px, 47vw);
   }
 }

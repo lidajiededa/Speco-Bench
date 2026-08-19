@@ -17,6 +17,11 @@ const statusBadge = document.querySelector("#statusBadge");
 const runTitle = document.querySelector("#runTitle");
 const runId = document.querySelector("#runId");
 const historyBody = document.querySelector("#historyBody");
+const historySearch = document.querySelector("#historySearch");
+const historyTotal = document.querySelector("#historyTotal");
+const historyPageInfo = document.querySelector("#historyPageInfo");
+const historyPrevious = document.querySelector("#historyPrevious");
+const historyNext = document.querySelector("#historyNext");
 const refreshButton = document.querySelector("#refreshButton");
 const latencyCharts = {
   ttft_ms: document.querySelector("#ttftChart"),
@@ -31,6 +36,11 @@ let pollTimer = null;
 let selectedJob = null;
 let selectedRunIndex = null;
 let selectedRunPinned = false;
+let historyPage = 1;
+let historyQuery = "";
+let historySearchTimer = null;
+let historyRequestSerial = 0;
+const historyPageSize = 10;
 
 const statusLabels = {
   queued: "排队中",
@@ -536,7 +546,9 @@ function renderHistory(jobs) {
   historyBody.replaceChildren();
   if (!jobs.length) {
     historyBody.innerHTML =
-      '<tr><td colspan="5" class="table-empty">暂无运行记录</td></tr>';
+      `<tr><td colspan="5" class="table-empty">${
+        historyQuery ? "未找到匹配的运行记录" : "暂无运行记录"
+      }</td></tr>`;
     return;
   }
   for (const job of jobs) {
@@ -561,6 +573,15 @@ function renderHistory(jobs) {
   }
 }
 
+function renderHistoryPagination(pagination) {
+  historyPage = pagination.page;
+  historyTotal.textContent = `共 ${pagination.total} 条`;
+  historyPageInfo.textContent =
+    `${pagination.page} / ${pagination.total_pages}`;
+  historyPrevious.disabled = pagination.page <= 1;
+  historyNext.disabled = pagination.page >= pagination.total_pages;
+}
+
 function selectJob(job) {
   if (selectedJob?.id !== job.id) {
     selectedRunIndex = null;
@@ -572,22 +593,35 @@ function selectJob(job) {
 }
 
 async function refreshJobs() {
+  const requestSerial = ++historyRequestSerial;
+  const parameters = new URLSearchParams({
+    page: String(historyPage),
+    page_size: String(historyPageSize),
+  });
+  if (historyQuery) parameters.set("q", historyQuery);
   try {
-    const data = await api("/api/jobs");
+    const data = await api(`/api/jobs?${parameters}`);
+    if (requestSerial !== historyRequestSerial) return;
     setServerState("控制台已连接", "connected");
     renderHistory(data.jobs);
+    renderHistoryPagination(data.pagination);
     if (selectedJob) {
-      const updated = data.jobs.find((job) => job.id === selectedJob.id);
+      let updated = data.jobs.find((job) => job.id === selectedJob.id);
+      if (
+        !updated &&
+        ["queued", "running"].includes(selectedJob.status)
+      ) {
+        updated = await api(`/api/jobs/${selectedJob.id}`);
+        if (requestSerial !== historyRequestSerial) return;
+      }
       if (updated) selectJob(updated);
     } else if (data.jobs.length) {
       selectJob(data.jobs[0]);
     }
-    const hasRunningJobs = data.jobs.some(
-      (job) => job.status === "queued" || job.status === "running",
-    );
-    if (hasRunningJobs) startPolling();
+    if (data.has_running_jobs) startPolling();
     else stopPolling();
   } catch (error) {
+    if (requestSerial !== historyRequestSerial) return;
     stopPolling();
     setServerState("连接失败", "disconnected");
     formError.textContent = error.message;
@@ -614,6 +648,9 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    historyQuery = "";
+    historySearch.value = "";
+    historyPage = 1;
     selectJob(job);
     progressSection.hidden = false;
     emptyState.hidden = true;
@@ -653,6 +690,21 @@ rangeRatio.addEventListener("input", () => {
 });
 
 refreshButton.addEventListener("click", refreshJobs);
+historySearch.addEventListener("input", () => {
+  historyQuery = historySearch.value.trim();
+  historyPage = 1;
+  window.clearTimeout(historySearchTimer);
+  historySearchTimer = window.setTimeout(refreshJobs, 250);
+});
+historyPrevious.addEventListener("click", () => {
+  if (historyPage <= 1) return;
+  historyPage -= 1;
+  refreshJobs();
+});
+historyNext.addEventListener("click", () => {
+  historyPage += 1;
+  refreshJobs();
+});
 window.addEventListener("resize", () => {
   const currentRun = selectedJob && selectedRunForJob(selectedJob);
   if (currentRun?.report) {
