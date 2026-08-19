@@ -6,6 +6,10 @@ const serverState = document.querySelector("#serverState");
 const datasetOptions = document.querySelector("#datasetOptions");
 const datasetFields = document.querySelector("#datasetFields");
 const randomFields = document.querySelector("#randomFields");
+const randomWorkloadList = document.querySelector("#randomWorkloadList");
+const randomWorkloadTemplate = document.querySelector("#randomWorkloadTemplate");
+const addRandomWorkloadButton = document.querySelector("#addRandomWorkload");
+const concurrencySection = document.querySelector("#concurrencySection");
 const rangeRatio = document.querySelector("#rangeRatio");
 const rangeRatioValue = document.querySelector("#rangeRatioValue");
 const randomImagesToggle = document.querySelector("#randomImagesToggle");
@@ -91,17 +95,54 @@ function selectedMode() {
   return form.elements.dataset_name.value;
 }
 
+function updateRandomWorkloads() {
+  const workloads = [...randomWorkloadList.querySelectorAll(".random-workload")];
+  workloads.forEach((workload, index) => {
+    workload.querySelector("[data-workload-title]").textContent =
+      `负载 ${index + 1}`;
+    workload.querySelector("[data-remove-workload]").disabled =
+      workloads.length === 1;
+  });
+}
+
+function addRandomWorkload(values = {}) {
+  const fragment = randomWorkloadTemplate.content.cloneNode(true);
+  const workload = fragment.querySelector(".random-workload");
+  const defaults = {
+    input_len: 1024,
+    output_len: 128,
+    concurrencies: "1, 4, 8",
+    num_prompts: "20, 80, 160",
+    ...values,
+  };
+  for (const [key, value] of Object.entries(defaults)) {
+    workload.querySelector(`[data-random-field="${key}"]`).value = value;
+  }
+  workload.querySelector("[data-remove-workload]").addEventListener("click", () => {
+    workload.remove();
+    updateRandomWorkloads();
+  });
+  randomWorkloadList.append(fragment);
+  updateRandomWorkloads();
+}
+
 function syncMode() {
   const random = selectedMode() === "random";
+  if (random && !randomWorkloadList.children.length) addRandomWorkload();
   datasetFields.hidden = random;
   randomFields.hidden = !random;
+  concurrencySection.hidden = random;
   form.elements.max_tokens.disabled = random;
   form.elements.tokenizer.disabled = !random;
-  form.elements.random_input_len.disabled = !random;
-  form.elements.random_output_len.disabled = !random;
+  form.elements.concurrencies.disabled = random;
+  form.elements.num_prompts.disabled = random;
   form.elements.random_range_ratio.disabled = !random;
   form.elements.trust_remote_code.disabled = !random;
   form.elements.random_images.disabled = !random;
+  addRandomWorkloadButton.disabled = !random;
+  randomWorkloadList.querySelectorAll("input").forEach((input) => {
+    input.disabled = !random;
+  });
   syncRandomImages();
 }
 
@@ -116,12 +157,55 @@ function syncRandomImages() {
   }
 }
 
+function randomWorkloadsPayload() {
+  const workloads = [...randomWorkloadList.querySelectorAll(".random-workload")];
+  if (!workloads.length) throw new Error("至少添加一个随机负载组");
+  return workloads.map((workload, index) => {
+    const valueFor = (key) =>
+      workload.querySelector(`[data-random-field="${key}"]`).value;
+    const inputLen = Number(valueFor("input_len"));
+    const outputLen = Number(valueFor("output_len"));
+    if (!Number.isInteger(inputLen) || inputLen < 1) {
+      throw new Error(`负载 ${index + 1} 的输入 Token 必须是正整数`);
+    }
+    if (!Number.isInteger(outputLen) || outputLen < 1) {
+      throw new Error(`负载 ${index + 1} 的输出 Token 必须是正整数`);
+    }
+
+    const concurrencies = splitValues(valueFor("concurrencies"));
+    const numPrompts = splitValues(valueFor("num_prompts"));
+    if (!concurrencies.length) {
+      throw new Error(`负载 ${index + 1} 至少填写一个并发数`);
+    }
+    if (numPrompts.length && numPrompts.length !== concurrencies.length) {
+      throw new Error(`负载 ${index + 1} 的请求数必须与并发数一一对应`);
+    }
+    return {
+      input_len: inputLen,
+      output_len: outputLen,
+      concurrencies,
+      num_prompts: numPrompts,
+    };
+  });
+}
+
 function buildPayload() {
   const data = new FormData(form);
-  const concurrencies = splitValues(String(data.get("concurrencies") || ""));
-  const numPrompts = splitValues(String(data.get("num_prompts") || ""));
-  if (!concurrencies.length) throw new Error("至少填写一个并发数");
-  if (numPrompts.length && numPrompts.length !== concurrencies.length) {
+  const mode = String(data.get("dataset_name"));
+  const concurrencies = mode === "custom"
+    ? splitValues(String(data.get("concurrencies") || ""))
+    : [];
+  const numPrompts = mode === "custom"
+    ? splitValues(String(data.get("num_prompts") || ""))
+    : [];
+  if (mode === "custom" && !concurrencies.length) {
+    throw new Error("至少填写一个并发数");
+  }
+  if (
+    mode === "custom" &&
+    numPrompts.length &&
+    numPrompts.length !== concurrencies.length
+  ) {
     throw new Error("请求数必须与并发数一一对应");
   }
 
@@ -136,7 +220,6 @@ function buildPayload() {
     throw new Error("Extra Body 必须是 JSON 对象");
   }
 
-  const mode = String(data.get("dataset_name"));
   const datasets = [
     ...form.querySelectorAll('input[name="datasets"]:checked'),
   ].map((input) => input.value);
@@ -155,10 +238,9 @@ function buildPayload() {
     datasets,
     concurrencies,
     num_prompts: numPrompts,
+    random_workloads: mode === "random" ? randomWorkloadsPayload() : null,
     max_tokens: numberValue(data, "max_tokens"),
     tokenizer: String(data.get("tokenizer") || "").trim() || null,
-    random_input_len: numberValue(data, "random_input_len", 1024),
-    random_output_len: numberValue(data, "random_output_len", 128),
     random_range_ratio: numberValue(data, "random_range_ratio", 0),
     random_image_width: numberValue(data, "random_image_width"),
     random_image_height: numberValue(data, "random_image_height"),
@@ -232,7 +314,7 @@ function updateStatus(job) {
           ? "全部完成"
           : "正式压测";
     const context = progress.dataset
-      ? `${progress.dataset} · C${progress.concurrency}`
+      ? `${runLoadLabel(progress)} · C${progress.concurrency}`
       : "";
     document.querySelector("#progressLabel").textContent =
       `${phase}${context ? ` · ${context}` : ""}`;
@@ -375,6 +457,16 @@ function drawAcceptanceChart(rates) {
   context.textAlign = "start";
 }
 
+function runLoadLabel(run) {
+  if (
+    Number.isInteger(run?.random_input_len) &&
+    Number.isInteger(run?.random_output_len)
+  ) {
+    return `随机 ${run.random_input_len}→${run.random_output_len}`;
+  }
+  return run?.dataset || "--";
+}
+
 function renderSpecDecode(run) {
   const spec = run?.report?.spec_decode;
   const available = Boolean(spec?.available);
@@ -401,7 +493,7 @@ function renderSpecDecode(run) {
   if (!rates.length) return;
 
   document.querySelector("#acceptanceContext").textContent =
-    `${run.dataset} · C${run.concurrency}`;
+    `${runLoadLabel(run)} · C${run.concurrency}`;
   drawAcceptanceChart(rates);
   rates.forEach((rate, index) => {
     const item = document.createElement("span");
@@ -428,7 +520,7 @@ function renderRuns(job, currentRun) {
     item.innerHTML = `
       <span class="run-index">${String(run.index).padStart(2, "0")}</span>
       <span class="run-name">
-        <strong>${escapeHtml(run.dataset)} · C${run.concurrency}</strong>
+        <strong>${escapeHtml(runLoadLabel(run))} · C${run.concurrency}</strong>
         <small>${run.num_prompts ?? "全部"} 个请求</small>
       </span>
       <span class="run-value ${run.status === "failed" ? "failed" : ""}">
@@ -447,7 +539,7 @@ function renderRuns(job, currentRun) {
 function renderMessages(job, run) {
   const warnings = run?.report?.warnings || [];
   const failures = run?.error
-    ? [`${run.dataset} / C${run.concurrency}: ${run.error}`]
+    ? [`${runLoadLabel(run)} / C${run.concurrency}: ${run.error}`]
     : [];
   if (job.error) failures.push(job.error);
   const warningBox = document.querySelector("#warningBox");
@@ -518,7 +610,7 @@ function renderResult(job) {
   emptyState.hidden = true;
   resultContent.hidden = false;
   document.querySelector("#latencyContext").textContent =
-    `${currentRun.dataset} · C${currentRun.concurrency} · 独立量程`;
+    `${runLoadLabel(currentRun)} · C${currentRun.concurrency} · 独立量程`;
   document.querySelector("#requestThroughput").textContent =
     formatNumber(summary.request_throughput);
   document.querySelector("#outputThroughput").textContent =
@@ -683,6 +775,7 @@ cancelButton.addEventListener("click", async () => {
 form.querySelectorAll('input[name="dataset_name"]').forEach((input) => {
   input.addEventListener("change", syncMode);
 });
+addRandomWorkloadButton.addEventListener("click", () => addRandomWorkload());
 randomImagesToggle.addEventListener("change", syncRandomImages);
 
 rangeRatio.addEventListener("input", () => {

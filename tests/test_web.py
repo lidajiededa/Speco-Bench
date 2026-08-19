@@ -128,6 +128,67 @@ class WebJobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.random_image_height, 480)
         self.assertEqual(config.random_images_per_prompt, 2)
 
+    async def test_random_workload_groups_run_sequentially_with_independent_plans(self):
+        job = await self.manager.create_job(
+            {
+                "base_url": "http://localhost:8000",
+                "model": "served-name",
+                "dataset_name": "random",
+                "tokenizer": "/models/local-model",
+                "random_workloads": [
+                    {
+                        "input_len": 128,
+                        "output_len": 32,
+                        "concurrencies": ["1", "2"],
+                        "num_prompts": ["3", "4"],
+                    },
+                    {
+                        "input_len": 2048,
+                        "output_len": 256,
+                        "concurrencies": ["8"],
+                        "num_prompts": ["16"],
+                    },
+                ],
+            }
+        )
+        await job.task
+
+        self.assertEqual(job.status, "completed")
+        self.assertEqual(job.configuration["total_runs"], 3)
+        self.assertEqual(
+            [
+                (
+                    config.random_input_len,
+                    config.random_output_len,
+                    config.concurrency,
+                    config.num_prompts,
+                )
+                for config in self.service.configs
+            ],
+            [
+                (128, 32, 1, 3),
+                (128, 32, 2, 4),
+                (2048, 256, 8, 16),
+            ],
+        )
+        self.assertEqual(
+            [run["dataset"] for run in job.runs],
+            [
+                "random-in128-out32",
+                "random-in128-out32",
+                "random-in2048-out256",
+            ],
+        )
+        self.assertEqual(job.runs[0]["random_input_len"], 128)
+        self.assertEqual(job.runs[0]["random_output_len"], 32)
+        self.assertEqual(job.runs[2]["random_input_len"], 2048)
+        self.assertEqual(job.runs[2]["random_output_len"], 256)
+        self.assertIn("workload-01-input-128-output-32", job.runs[0]["result_dir"])
+        self.assertIn(
+            "workload-02-input-2048-output-256",
+            job.runs[2]["result_dir"],
+        )
+
     async def test_runs_dataset_concurrency_matrix_and_writes_csv(self):
         job = await self.manager.create_job(
             {
@@ -273,6 +334,8 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Speco-Bench", page)
         self.assertIn('name="task_name"', page)
         self.assertIn('id="historySearch"', page)
+        self.assertIn('id="randomWorkloadList"', page)
+        self.assertIn('id="addRandomWorkload"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)
@@ -294,6 +357,29 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status, 400)
         payload = await response.json()
+        self.assertIn("exactly one value per concurrency", payload["error"])
+
+    async def test_rejects_unpaired_random_workload_plan(self):
+        response = await self.client.post(
+            "/api/jobs",
+            json={
+                "base_url": "http://localhost:8000",
+                "model": "model",
+                "dataset_name": "random",
+                "random_workloads": [
+                    {
+                        "input_len": 128,
+                        "output_len": 32,
+                        "concurrencies": ["1", "4"],
+                        "num_prompts": ["10"],
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status, 400)
+        payload = await response.json()
+        self.assertIn("random_workloads[0]", payload["error"])
         self.assertIn("exactly one value per concurrency", payload["error"])
 
     async def test_rejects_task_name_over_length_limit(self):

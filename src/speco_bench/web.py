@@ -117,6 +117,74 @@ class WebRunSpec:
     requested_num_prompts: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class WebRandomWorkload:
+    input_len: int
+    output_len: int
+    concurrencies: list[int]
+    num_prompts: list[int | None]
+
+
+def _concurrency_plan(
+    payload: dict[str, Any],
+    *,
+    context: str | None = None,
+) -> tuple[list[int], list[int | None]]:
+    try:
+        concurrencies = parse_concurrencies(
+            _string_values(payload.get("concurrencies", ["1"]), "concurrencies")
+        )
+        raw_num_prompts = payload.get("num_prompts")
+        num_prompts = parse_num_prompts(
+            (
+                _string_values(raw_num_prompts, "num_prompts")
+                if raw_num_prompts not in (None, "", [])
+                else None
+            ),
+            expected_count=len(concurrencies),
+        )
+    except ValueError as exc:
+        if context is None:
+            raise
+        raise ValueError(f"{context}: {exc}") from exc
+    return concurrencies, num_prompts
+
+
+def _random_workloads(payload: dict[str, Any]) -> list[WebRandomWorkload]:
+    raw_workloads = payload.get("random_workloads")
+    if raw_workloads is None:
+        concurrencies, num_prompts = _concurrency_plan(payload)
+        return [
+            WebRandomWorkload(
+                input_len=_integer_default(payload, "random_input_len", default=1024),
+                output_len=_integer_default(payload, "random_output_len", default=128),
+                concurrencies=concurrencies,
+                num_prompts=num_prompts,
+            )
+        ]
+    if not isinstance(raw_workloads, list) or not raw_workloads:
+        raise ValueError("random_workloads must be a non-empty list")
+
+    workloads: list[WebRandomWorkload] = []
+    for index, raw_workload in enumerate(raw_workloads, start=1):
+        context = f"random_workloads[{index - 1}]"
+        if not isinstance(raw_workload, dict):
+            raise ValueError(f"{context} must be an object")
+        concurrencies, num_prompts = _concurrency_plan(
+            raw_workload,
+            context=context,
+        )
+        workloads.append(
+            WebRandomWorkload(
+                input_len=_integer_default(raw_workload, "input_len", default=1024),
+                output_len=_integer_default(raw_workload, "output_len", default=128),
+                concurrencies=concurrencies,
+                num_prompts=num_prompts,
+            )
+        )
+    return workloads
+
+
 @dataclass(slots=True)
 class WebJob:
     job_id: str
@@ -190,24 +258,28 @@ class WebJobManager:
         if endpoint_type not in {"chat", "completions"}:
             raise ValueError("endpoint_type must be chat or completions")
 
-        concurrency_values = _string_values(
-            payload.get("concurrencies", ["1"]),
-            "concurrencies",
-        )
-        concurrencies = parse_concurrencies(concurrency_values)
-        raw_num_prompts = payload.get("num_prompts")
-        num_prompts_values = parse_num_prompts(
-            (
-                _string_values(raw_num_prompts, "num_prompts")
-                if raw_num_prompts not in (None, "", [])
-                else None
-            ),
-            expected_count=len(concurrencies),
-        )
-
         if dataset_name == "random":
-            datasets = [DatasetSpec(name="random", path=Path("<generated>"))]
+            workloads = _random_workloads(payload)
+            datasets = [
+                DatasetSpec(
+                    name=f"random-in{workload.input_len}-out{workload.output_len}",
+                    path=Path("<generated>"),
+                )
+                for workload in workloads
+            ]
+            concurrencies = [
+                concurrency
+                for workload in workloads
+                for concurrency in workload.concurrencies
+            ]
+            num_prompts_values = [
+                num_prompts
+                for workload in workloads
+                for num_prompts in workload.num_prompts
+            ]
         else:
+            workloads = []
+            concurrencies, num_prompts_values = _concurrency_plan(payload)
             raw_datasets = payload.get("datasets")
             if raw_datasets in (None, "", []):
                 raise ValueError("at least one dataset is required")
@@ -244,81 +316,121 @@ class WebJobManager:
         }
 
         specs: list[WebRunSpec] = []
-        for dataset in datasets:
-            for concurrency, num_prompts in zip(
-                concurrencies,
-                num_prompts_values,
+
+        def add_run_spec(
+            *,
+            dataset: DatasetSpec,
+            concurrency: int,
+            num_prompts: int | None,
+            result_dir: Path,
+            random_input_len: int = 1024,
+            random_output_len: int = 128,
+        ) -> None:
+            config = BenchmarkConfig(
+                **common,
+                dataset_name=dataset_name,
+                dataset_path=(dataset.path if dataset_name == "custom" else None),
+                output_dir=result_dir,
+                concurrency=concurrency,
+                num_prompts=num_prompts,
+                max_tokens=(
+                    _integer(payload, "max_tokens")
+                    if dataset_name == "custom"
+                    else None
+                ),
+                random_input_len=random_input_len,
+                random_output_len=random_output_len,
+                random_range_ratio=_number(
+                    payload,
+                    "random_range_ratio",
+                    default=0.0,
+                ),
+                random_image_width=(
+                    _integer(payload, "random_image_width")
+                    if dataset_name == "random"
+                    else None
+                ),
+                random_image_height=(
+                    _integer(payload, "random_image_height")
+                    if dataset_name == "random"
+                    else None
+                ),
+                random_images_per_prompt=_integer_default(
+                    payload,
+                    "random_images_per_prompt",
+                    default=1,
+                ),
+                tokenizer=_optional_text(payload, "tokenizer"),
+                trust_remote_code=_boolean(payload, "trust_remote_code"),
+            )
+            config.validate()
+            specs.append(
+                WebRunSpec(
+                    dataset=dataset,
+                    config=config,
+                    requested_num_prompts=num_prompts,
+                )
+            )
+
+        if dataset_name == "random":
+            for workload_index, (dataset, workload) in enumerate(
+                zip(datasets, workloads),
+                start=1,
             ):
-                prompt_label = str(num_prompts) if num_prompts is not None else "all"
-                result_dir = (
-                    job_dir
-                    / _slug(dataset.name)
-                    / f"concurrency-{concurrency}-prompts-{prompt_label}"
-                )
-                config = BenchmarkConfig(
-                    **common,
-                    dataset_name=dataset_name,
-                    dataset_path=(
-                        dataset.path if dataset_name == "custom" else None
-                    ),
-                    output_dir=result_dir,
-                    concurrency=concurrency,
-                    num_prompts=num_prompts,
-                    max_tokens=(
-                        _integer(payload, "max_tokens")
-                        if dataset_name == "custom"
-                        else None
-                    ),
-                    random_input_len=(
-                        _integer_default(
-                            payload,
-                            "random_input_len",
-                            default=1024,
-                        )
-                    ),
-                    random_output_len=(
-                        _integer_default(
-                            payload,
-                            "random_output_len",
-                            default=128,
-                        )
-                    ),
-                    random_range_ratio=_number(
-                        payload,
-                        "random_range_ratio",
-                        default=0.0,
-                    ),
-                    random_image_width=(
-                        _integer(payload, "random_image_width")
-                        if dataset_name == "random"
-                        else None
-                    ),
-                    random_image_height=(
-                        _integer(payload, "random_image_height")
-                        if dataset_name == "random"
-                        else None
-                    ),
-                    random_images_per_prompt=(
-                        _integer_default(
-                            payload,
-                            "random_images_per_prompt",
-                            default=1,
-                        )
-                    ),
-                    tokenizer=_optional_text(payload, "tokenizer"),
-                    trust_remote_code=_boolean(
-                        payload,
-                        "trust_remote_code",
-                    ),
-                )
-                config.validate()
-                specs.append(
-                    WebRunSpec(
-                        dataset=dataset,
-                        config=config,
-                        requested_num_prompts=num_prompts,
+                for concurrency, num_prompts in zip(
+                    workload.concurrencies,
+                    workload.num_prompts,
+                ):
+                    prompt_label = (
+                        str(num_prompts) if num_prompts is not None else "all"
                     )
-                )
+                    result_dir = (
+                        job_dir
+                        / (
+                            f"workload-{workload_index:02d}"
+                            f"-input-{workload.input_len}"
+                            f"-output-{workload.output_len}"
+                        )
+                        / f"concurrency-{concurrency}-prompts-{prompt_label}"
+                    )
+                    add_run_spec(
+                        dataset=dataset,
+                        concurrency=concurrency,
+                        num_prompts=num_prompts,
+                        result_dir=result_dir,
+                        random_input_len=workload.input_len,
+                        random_output_len=workload.output_len,
+                    )
+        else:
+            for dataset in datasets:
+                for concurrency, num_prompts in zip(
+                    concurrencies,
+                    num_prompts_values,
+                ):
+                    prompt_label = (
+                        str(num_prompts) if num_prompts is not None else "all"
+                    )
+                    result_dir = (
+                        job_dir
+                        / _slug(dataset.name)
+                        / f"concurrency-{concurrency}-prompts-{prompt_label}"
+                    )
+                    add_run_spec(
+                        dataset=dataset,
+                        concurrency=concurrency,
+                        num_prompts=num_prompts,
+                        result_dir=result_dir,
+                    )
+
+        random_workloads = [
+            {
+                "input_len": workload.input_len,
+                "output_len": workload.output_len,
+                "concurrencies": workload.concurrencies,
+                "num_prompts": workload.num_prompts,
+            }
+            for workload in workloads
+        ]
 
         configuration = {
             "base_url": base_url,
@@ -327,6 +439,7 @@ class WebJobManager:
             "datasets": [dataset.name for dataset in datasets],
             "concurrencies": concurrencies,
             "num_prompts": num_prompts_values,
+            "random_workloads": random_workloads,
             "endpoint_type": endpoint_type,
             "tokenizer": _optional_text(payload, "tokenizer"),
             "random_image_width": _integer(payload, "random_image_width"),
@@ -408,6 +521,13 @@ class WebJobManager:
                     "status": "running",
                     "result_dir": str(spec.config.output_dir),
                 }
+                if spec.config.dataset_name == "random":
+                    run_state.update(
+                        {
+                            "random_input_len": spec.config.random_input_len,
+                            "random_output_len": spec.config.random_output_len,
+                        }
+                    )
                 job.runs.append(run_state)
 
                 def progress_callback(
@@ -427,6 +547,17 @@ class WebJobManager:
                         "concurrency": run_spec.config.concurrency,
                         "overall_percent": overall,
                     }
+                    if run_spec.config.dataset_name == "random":
+                        job.progress.update(
+                            {
+                                "random_input_len": (
+                                    run_spec.config.random_input_len
+                                ),
+                                "random_output_len": (
+                                    run_spec.config.random_output_len
+                                ),
+                            }
+                        )
 
                 try:
                     report = await self.service.run(

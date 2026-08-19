@@ -280,6 +280,43 @@ select {
   gap: 14px;
 }
 
+.random-workload-heading,
+.random-workload-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.random-workload-heading > span {
+  color: #404b51;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.random-workload-list {
+  display: grid;
+  gap: 10px;
+}
+
+.random-workload {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.random-workload-title strong {
+  font-size: 11px;
+}
+
+.icon-button.compact-icon-button {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+}
+
 .random-image-fields {
   display: grid;
   gap: 14px;

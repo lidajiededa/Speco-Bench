@@ -112,16 +112,77 @@
                   placeholder="/path/to/model"
                 >
               </label>
-              <div class="field-pair">
-                <label class="field">
-                  <span>输入 Token</span>
-                  <input name="random_input_len" type="number" min="1" value="1024">
-                </label>
-                <label class="field">
-                  <span>输出 Token</span>
-                  <input name="random_output_len" type="number" min="1" value="128">
-                </label>
+              <div class="random-workload-heading">
+                <span>随机负载组</span>
+                <button
+                  class="icon-button compact-icon-button"
+                  id="addRandomWorkload"
+                  type="button"
+                  title="添加负载组"
+                  aria-label="添加负载组"
+                >
+                  +
+                </button>
               </div>
+              <div class="random-workload-list" id="randomWorkloadList"></div>
+              <template id="randomWorkloadTemplate">
+                <div class="random-workload">
+                  <div class="random-workload-title">
+                    <strong data-workload-title>负载 1</strong>
+                    <button
+                      class="icon-button compact-icon-button"
+                      data-remove-workload
+                      type="button"
+                      title="删除负载组"
+                      aria-label="删除负载组"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div class="field-pair">
+                    <label class="field">
+                      <span>输入 Token</span>
+                      <input
+                        data-random-field="input_len"
+                        type="number"
+                        min="1"
+                        value="1024"
+                        required
+                      >
+                    </label>
+                    <label class="field">
+                      <span>输出 Token</span>
+                      <input
+                        data-random-field="output_len"
+                        type="number"
+                        min="1"
+                        value="128"
+                        required
+                      >
+                    </label>
+                  </div>
+                  <div class="field-pair">
+                    <label class="field">
+                      <span>并发数</span>
+                      <input
+                        data-random-field="concurrencies"
+                        type="text"
+                        value="1, 4, 8"
+                        required
+                      >
+                    </label>
+                    <label class="field">
+                      <span>请求数</span>
+                      <input
+                        data-random-field="num_prompts"
+                        type="text"
+                        value="20, 80, 160"
+                        placeholder="与并发数对应"
+                      >
+                    </label>
+                  </div>
+                </div>
+              </template>
               <label class="field">
                 <span>长度浮动比例</span>
                 <div class="range-control">
@@ -166,7 +227,7 @@
             </div>
           </section>
 
-          <section class="form-section">
+          <section class="form-section" id="concurrencySection">
             <div class="section-heading">
               <span class="step-number">03</span>
               <h2>并发</h2>
