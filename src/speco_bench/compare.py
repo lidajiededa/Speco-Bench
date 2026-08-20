@@ -53,20 +53,41 @@ def _stream_stats(
         if first_token_at is not None
         else None
     )
-    output_tokens = usage_output_tokens or chunk_count
-    token_source = "usage" if usage_output_tokens > 0 else "stream_chunks"
-    total_tokens_per_second = (
-        output_tokens / (elapsed_ms / 1000) if elapsed_ms > 0 else 0.0
+    token_metrics_ready = usage_output_tokens > 0 or status in {
+        "completed",
+        "failed",
+        "stopped",
+    }
+    output_tokens = (
+        usage_output_tokens or chunk_count
+        if token_metrics_ready
+        else None
     )
-    decode_token_count = max(0, output_tokens - 1)
+    token_source = (
+        "usage"
+        if usage_output_tokens > 0
+        else "stream_chunks" if token_metrics_ready else "pending"
+    )
+    total_tokens_per_second = (
+        output_tokens / (elapsed_ms / 1000)
+        if output_tokens is not None and elapsed_ms > 0
+        else None
+    )
+    decode_token_count = (
+        max(0, output_tokens - 1) if output_tokens is not None else None
+    )
     decode_tokens_per_second = (
         decode_token_count / (decode_ms / 1000)
-        if decode_ms is not None and decode_ms > 0
-        else 0.0
+        if decode_token_count is not None
+        and decode_ms is not None
+        and decode_ms > 0
+        else None
     )
     tpot_ms = (
         decode_ms / decode_token_count
-        if decode_ms is not None and decode_token_count > 0
+        if decode_token_count is not None
+        and decode_ms is not None
+        and decode_token_count > 0
         else None
     )
     return {
@@ -96,6 +117,7 @@ async def stream_model_comparison(
     side: str,
     target: CompareModelTarget,
     prompt: str,
+    system_prompt: str | None,
     max_tokens: int,
     temperature: float,
     top_p: float,
@@ -128,10 +150,14 @@ async def stream_model_comparison(
     headers = {"Content-Type": "application/json"}
     if target.api_key:
         headers["Authorization"] = f"Bearer {target.api_key}"
+    messages: list[dict[str, str]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
     body: dict[str, Any] = {
         **extra_body,
         "model": target.model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "stream": True,
         "stream_options": {"include_usage": True},
         "max_tokens": max_tokens,

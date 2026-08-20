@@ -1212,6 +1212,13 @@ tbody tr:hover td {
   background: var(--coral);
 }
 
+.compare-model-fields {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+
 .compare-generation-grid {
   display: grid;
   align-items: end;
@@ -1273,6 +1280,15 @@ tbody tr:hover td {
 .toggle-field:focus-within {
   border-color: var(--green);
   box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.compare-prompt-options {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.compare-system-toggle {
+  width: 190px;
 }
 
 .compare-prompt-field textarea {
