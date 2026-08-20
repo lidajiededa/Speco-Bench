@@ -807,6 +807,7 @@ async def _api_compare_stream(request: web.Request) -> web.StreamResponse:
             side: _compare_target(payload, side) for side in ("a", "b")
         }
         prompt = _required_text(payload, "prompt")
+        system_prompt = _optional_text(payload, "system_prompt")
         max_tokens = _integer_default(payload, "max_tokens", default=1024)
         temperature = _number(payload, "temperature", default=0.7)
         top_p = _number(payload, "top_p", default=1.0)
@@ -853,6 +854,7 @@ async def _api_compare_stream(request: web.Request) -> web.StreamResponse:
                 side=side,
                 target=target,
                 prompt=prompt,
+                system_prompt=system_prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,

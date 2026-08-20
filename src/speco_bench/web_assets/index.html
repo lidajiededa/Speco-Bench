@@ -573,14 +573,16 @@
           <div class="compare-model-grid">
             <fieldset class="compare-model-config model-a">
               <legend><span>A</span> 模型 A</legend>
-              <label class="field">
-                <span>Base URL</span>
-                <input id="compareBaseUrlA" type="url" value="http://127.0.0.1:8000" required>
-              </label>
-              <label class="field">
-                <span>服务模型名</span>
-                <input id="compareModelA" type="text" placeholder="例如 qwen3-8b" required>
-              </label>
+              <div class="compare-model-fields">
+                <label class="field">
+                  <span>Base URL</span>
+                  <input id="compareBaseUrlA" type="url" value="http://127.0.0.1:8000" required>
+                </label>
+                <label class="field">
+                  <span>服务模型名</span>
+                  <input id="compareModelA" type="text" placeholder="例如 qwen3-8b" required>
+                </label>
+              </div>
               <label class="field">
                 <span>API Key（可选）</span>
                 <input id="compareApiKeyA" type="password" autocomplete="off" placeholder="仅用于本次请求">
@@ -589,14 +591,16 @@
 
             <fieldset class="compare-model-config model-b">
               <legend><span>B</span> 模型 B</legend>
-              <label class="field">
-                <span>Base URL</span>
-                <input id="compareBaseUrlB" type="url" value="http://127.0.0.1:8001" required>
-              </label>
-              <label class="field">
-                <span>服务模型名</span>
-                <input id="compareModelB" type="text" placeholder="例如 qwen3-8b-spec" required>
-              </label>
+              <div class="compare-model-fields">
+                <label class="field">
+                  <span>Base URL</span>
+                  <input id="compareBaseUrlB" type="url" value="http://127.0.0.1:8001" required>
+                </label>
+                <label class="field">
+                  <span>服务模型名</span>
+                  <input id="compareModelB" type="text" placeholder="例如 qwen3-8b-spec" required>
+                </label>
+              </div>
               <label class="field">
                 <span>API Key（可选）</span>
                 <input id="compareApiKeyB" type="password" autocomplete="off" placeholder="仅用于本次请求">
@@ -624,8 +628,21 @@
             </label>
           </div>
 
+          <div class="compare-prompt-options">
+            <label class="toggle-field compare-system-toggle">
+              <span>使用系统提示</span>
+              <input id="compareSystemPromptEnabled" type="checkbox">
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <label class="field compare-prompt-field" id="compareSystemPromptField" hidden>
+            <span>系统提示</span>
+            <textarea id="compareSystemPrompt" rows="4" placeholder="例如：你是一位严谨的技术助手。"></textarea>
+          </label>
+
           <label class="field compare-prompt-field">
-            <span>Prompt</span>
+            <span>用户提示</span>
             <textarea id="comparePrompt" rows="6" required>请用简洁清晰的语言解释投机解码的工作原理，并说明它为什么能提升大语言模型的推理速度。</textarea>
           </label>
 

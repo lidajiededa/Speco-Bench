@@ -12,6 +12,9 @@
   const stopButton = $("compareStopButton");
   const runState = $("compareRunState");
   const formError = $("compareFormError");
+  const systemPromptEnabled = $("compareSystemPromptEnabled");
+  const systemPromptField = $("compareSystemPromptField");
+  const systemPrompt = $("compareSystemPrompt");
   const storageKey = "speco-bench-compare-config-v1";
   const savedFieldIds = [
     "compareBaseUrlA",
@@ -22,6 +25,8 @@
     "compareTemperature",
     "compareTopP",
     "compareIgnoreEos",
+    "compareSystemPromptEnabled",
+    "compareSystemPrompt",
     "comparePrompt",
     "compareExtraBody",
     "compareTimeout",
@@ -109,6 +114,12 @@
     return Number.isFinite(value) ? `${value.toFixed(2)} tok/s` : "--";
   }
 
+  function syncSystemPrompt() {
+    const enabled = systemPromptEnabled.checked;
+    systemPromptField.hidden = !enabled;
+    systemPrompt.disabled = !enabled;
+  }
+
   function setSideStatus(side, status) {
     const element = sideElements[side].status;
     element.className = `compare-status ${status}`;
@@ -122,12 +133,16 @@
     elements.tpot.textContent = formatMilliseconds(stats.tpot_ms);
     elements.e2e.textContent = formatMilliseconds(stats.e2e_ms);
     elements.decodeRate.textContent = formatRate(stats.decode_tokens_per_second);
-    const source = stats.token_source === "usage" ? "API Usage" : "流数据块估算";
+    const sourceLabels = {
+      usage: "API Usage",
+      stream_chunks: "流数据块估算",
+      pending: "等待 Token 统计",
+    };
     elements.meta.textContent = [
       `Token ${stats.output_tokens ?? "--"}`,
       `字符 ${stats.char_count ?? "--"}`,
       `数据块 ${stats.chunk_count ?? "--"}`,
-      source,
+      sourceLabels[stats.token_source] || "等待 Token 统计",
     ].join(" · ");
     setSideStatus(side, stats.status || "streaming");
   }
@@ -220,6 +235,9 @@
         },
       },
       prompt: $("comparePrompt").value.trim(),
+      system_prompt: systemPromptEnabled.checked
+        ? systemPrompt.value.trim() || null
+        : null,
       max_tokens: Number($("compareMaxTokens").value),
       temperature: Number($("compareTemperature").value),
       top_p: Number($("compareTopP").value),
@@ -297,9 +315,11 @@
   savedFieldIds.forEach((id) => {
     $(id).addEventListener("input", saveConfig);
   });
+  systemPromptEnabled.addEventListener("input", syncSystemPrompt);
   form.addEventListener("submit", startComparison);
   stopButton.addEventListener("click", () => controller?.abort());
   restoreConfig();
+  syncSystemPrompt();
   let initialWorkspace = "benchmark";
   try {
     initialWorkspace = localStorage.getItem("speco-bench-workspace") || "benchmark";

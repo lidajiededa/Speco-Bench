@@ -342,6 +342,8 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('name="ignore_eos"', page)
         self.assertIn('id="compareWorkspace"', page)
         self.assertIn('id="compareForm"', page)
+        self.assertIn('id="compareSystemPromptEnabled"', page)
+        self.assertIn('id="compareSystemPromptField"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)
@@ -400,6 +402,7 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
                         },
                     },
                     "prompt": "compare this",
+                    "system_prompt": "answer as a benchmark expert",
                     "max_tokens": 16,
                     "temperature": 0.2,
                     "top_p": 0.9,
@@ -420,6 +423,19 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(body["stream"] for body in received_bodies))
         self.assertTrue(all(body["ignore_eos"] for body in received_bodies))
         self.assertTrue(all(body["seed"] == 7 for body in received_bodies))
+        self.assertTrue(
+            all(
+                body["messages"]
+                == [
+                    {
+                        "role": "system",
+                        "content": "answer as a benchmark expert",
+                    },
+                    {"role": "user", "content": "compare this"},
+                ]
+                for body in received_bodies
+            )
+        )
         deltas = {
             side: "".join(
                 event["text"]
@@ -430,6 +446,23 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(deltas["a"], "model-a-think model-a-answer")
         self.assertEqual(deltas["b"], "model-b-think model-b-answer")
+        streaming_stats = [
+            event["stats"] for event in events if event["type"] == "delta"
+        ]
+        self.assertTrue(streaming_stats)
+        self.assertTrue(
+            all(stats["output_tokens"] is None for stats in streaming_stats)
+        )
+        self.assertTrue(all(stats["tpot_ms"] is None for stats in streaming_stats))
+        self.assertTrue(
+            all(
+                stats["decode_tokens_per_second"] is None
+                for stats in streaming_stats
+            )
+        )
+        self.assertTrue(
+            all(stats["token_source"] == "pending" for stats in streaming_stats)
+        )
         completed = {
             event["side"]: event["stats"]
             for event in events
