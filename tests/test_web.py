@@ -336,6 +336,8 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="historySearch"', page)
         self.assertIn('id="randomWorkloadList"', page)
         self.assertIn('id="addRandomWorkload"', page)
+        self.assertIn('id="datasetConcurrencyFields"', page)
+        self.assertIn('name="ignore_eos"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)

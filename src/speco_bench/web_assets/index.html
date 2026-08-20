@@ -227,30 +227,32 @@
             </div>
           </section>
 
-          <section class="form-section" id="concurrencySection">
+          <section class="form-section">
             <div class="section-heading">
               <span class="step-number">03</span>
-              <h2>并发</h2>
+              <h2>并发与生成</h2>
             </div>
-            <label class="field">
-              <span>并发数</span>
-              <input
-                name="concurrencies"
-                type="text"
-                value="1, 4, 8"
-                placeholder="1, 4, 8"
-                required
-              >
-            </label>
-            <label class="field">
-              <span>请求数</span>
-              <input
-                name="num_prompts"
-                type="text"
-                value="20, 80, 160"
-                placeholder="与并发数一一对应"
-              >
-            </label>
+            <div class="dataset-concurrency-fields" id="datasetConcurrencyFields">
+              <label class="field">
+                <span>并发数</span>
+                <input
+                  name="concurrencies"
+                  type="text"
+                  value="1, 4, 8"
+                  placeholder="1, 4, 8"
+                  required
+                >
+              </label>
+              <label class="field">
+                <span>请求数</span>
+                <input
+                  name="num_prompts"
+                  type="text"
+                  value="20, 80, 160"
+                  placeholder="与并发数一一对应"
+                >
+              </label>
+            </div>
             <label class="toggle-row">
               <input name="ignore_eos" type="checkbox">
               <span class="toggle"></span>

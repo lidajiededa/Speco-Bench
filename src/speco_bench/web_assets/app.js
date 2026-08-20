@@ -9,7 +9,9 @@ const randomFields = document.querySelector("#randomFields");
 const randomWorkloadList = document.querySelector("#randomWorkloadList");
 const randomWorkloadTemplate = document.querySelector("#randomWorkloadTemplate");
 const addRandomWorkloadButton = document.querySelector("#addRandomWorkload");
-const concurrencySection = document.querySelector("#concurrencySection");
+const datasetConcurrencyFields = document.querySelector(
+  "#datasetConcurrencyFields",
+);
 const rangeRatio = document.querySelector("#rangeRatio");
 const rangeRatioValue = document.querySelector("#rangeRatioValue");
 const randomImagesToggle = document.querySelector("#randomImagesToggle");
@@ -131,7 +133,7 @@ function syncMode() {
   if (random && !randomWorkloadList.children.length) addRandomWorkload();
   datasetFields.hidden = random;
   randomFields.hidden = !random;
-  concurrencySection.hidden = random;
+  datasetConcurrencyFields.hidden = random;
   form.elements.max_tokens.disabled = random;
   form.elements.tokenizer.disabled = !random;
   form.elements.concurrencies.disabled = random;
