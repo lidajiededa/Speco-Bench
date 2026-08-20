@@ -12,6 +12,7 @@ from typing import Any
 
 from aiohttp import web
 
+from .compare import CompareModelTarget, stream_model_comparison
 from .config import BenchmarkConfig
 from .matrix import (
     DatasetSpec,
@@ -780,6 +781,101 @@ async def _api_cancel_job(request: web.Request) -> web.Response:
     return web.json_response(job.to_dict())
 
 
+def _compare_target(payload: dict[str, Any], side: str) -> CompareModelTarget:
+    models = payload.get("models")
+    if not isinstance(models, dict):
+        raise ValueError("models must be an object")
+    target = models.get(side)
+    if not isinstance(target, dict):
+        raise ValueError(f"models.{side} must be an object")
+    base_url = _required_text(target, "base_url")
+    if not base_url.startswith(("http://", "https://")):
+        raise ValueError(f"models.{side}.base_url must use http or https")
+    return CompareModelTarget(
+        base_url=base_url,
+        model=_required_text(target, "model"),
+        api_key=_optional_text(target, "api_key"),
+    )
+
+
+async def _api_compare_stream(request: web.Request) -> web.StreamResponse:
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be a JSON object")
+        targets = {
+            side: _compare_target(payload, side) for side in ("a", "b")
+        }
+        prompt = _required_text(payload, "prompt")
+        max_tokens = _integer_default(payload, "max_tokens", default=1024)
+        temperature = _number(payload, "temperature", default=0.7)
+        top_p = _number(payload, "top_p", default=1.0)
+        ignore_eos = _boolean(payload, "ignore_eos", default=False)
+        timeout = _number(payload, "request_timeout_seconds", default=3600)
+        extra_body = payload.get("extra_body", {})
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
+        if temperature < 0:
+            raise ValueError("temperature must not be negative")
+        if not 0 < top_p <= 1:
+            raise ValueError("top_p must be greater than 0 and at most 1")
+        if timeout <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
+        if not isinstance(extra_body, dict):
+            raise ValueError("extra_body must be an object")
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "application/x-ndjson; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
+    await response.prepare(request)
+    write_lock = asyncio.Lock()
+
+    async def emit(event: dict[str, Any]) -> None:
+        line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+        try:
+            async with write_lock:
+                await response.write(f"{line}\n".encode())
+        except (ConnectionError, RuntimeError) as exc:
+            raise asyncio.CancelledError from exc
+
+    tasks = [
+        asyncio.create_task(
+            stream_model_comparison(
+                side=side,
+                target=target,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                ignore_eos=ignore_eos,
+                extra_body=extra_body,
+                request_timeout_seconds=timeout,
+                emit=emit,
+            )
+        )
+        for side, target in targets.items()
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    except (asyncio.CancelledError, ConnectionError):
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        with contextlib.suppress(ConnectionError, RuntimeError):
+            await response.write_eof()
+    return response
+
+
 def _write_results_archive(job: WebJob) -> Path:
     archive_path = Path(job.result_dir or "") / "results.zip"
     temporary_path = archive_path.with_name(
@@ -879,6 +975,7 @@ def create_web_app(
     app.router.add_post("/api/jobs", _api_create_job)
     app.router.add_get("/api/jobs/{job_id}", _api_job)
     app.router.add_post("/api/jobs/{job_id}/cancel", _api_cancel_job)
+    app.router.add_post("/api/compare/stream", _api_compare_stream)
     app.router.add_get(
         "/api/jobs/{job_id}/files/{filename}",
         _api_job_file,

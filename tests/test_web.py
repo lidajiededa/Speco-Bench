@@ -1,11 +1,13 @@
 import asyncio
 import io
+import json
 import tempfile
 import unittest
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
+from aiohttp import web as aiohttp_web
 from aiohttp.test_utils import TestClient, TestServer
 
 from speco_bench.models import (
@@ -338,11 +340,120 @@ class WebApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="addRandomWorkload"', page)
         self.assertIn('id="datasetConcurrencyFields"', page)
         self.assertIn('name="ignore_eos"', page)
+        self.assertIn('id="compareWorkspace"', page)
+        self.assertIn('id="compareForm"', page)
 
         response = await self.client.get("/api/configuration")
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(payload["datasets"][0]["name"], "gsm8k")
+
+    async def test_streams_two_model_comparisons_concurrently(self):
+        both_requests_started = asyncio.Event()
+        received_bodies = []
+
+        async def chat_completions(request):
+            body = await request.json()
+            received_bodies.append(body)
+            if len(received_bodies) == 2:
+                both_requests_started.set()
+            await asyncio.wait_for(both_requests_started.wait(), timeout=1)
+            model = body["model"]
+            response = aiohttp_web.StreamResponse(
+                headers={"Content-Type": "text/event-stream"}
+            )
+            await response.prepare(request)
+            reasoning_key = "reasoning_content" if model == "model-a" else "reasoning"
+            chunks = [
+                {"choices": [{"delta": {reasoning_key: f"{model}-think "}}]},
+                {
+                    "choices": [
+                        {"delta": {"content": f"{model}-answer"}, "finish_reason": "stop"}
+                    ]
+                },
+                {"choices": [], "usage": {"completion_tokens": 7}},
+            ]
+            for chunk in chunks:
+                await response.write(
+                    f"data: {json.dumps(chunk)}\n\n".encode()
+                )
+                await asyncio.sleep(0.01)
+            await response.write(b"data: [DONE]\n\n")
+            return response
+
+        upstream_app = aiohttp_web.Application()
+        upstream_app.router.add_post("/v1/chat/completions", chat_completions)
+        upstream = TestServer(upstream_app)
+        await upstream.start_server()
+        try:
+            response = await self.client.post(
+                "/api/compare/stream",
+                json={
+                    "models": {
+                        "a": {
+                            "base_url": str(upstream.make_url("/")),
+                            "model": "model-a",
+                        },
+                        "b": {
+                            "base_url": str(upstream.make_url("/v1")),
+                            "model": "model-b",
+                        },
+                    },
+                    "prompt": "compare this",
+                    "max_tokens": 16,
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "ignore_eos": True,
+                    "extra_body": {"seed": 7},
+                },
+            )
+            self.assertEqual(response.status, 200)
+            events = [
+                json.loads(line)
+                for line in (await response.text()).splitlines()
+                if line
+            ]
+        finally:
+            await upstream.close()
+
+        self.assertEqual({body["model"] for body in received_bodies}, {"model-a", "model-b"})
+        self.assertTrue(all(body["stream"] for body in received_bodies))
+        self.assertTrue(all(body["ignore_eos"] for body in received_bodies))
+        self.assertTrue(all(body["seed"] == 7 for body in received_bodies))
+        deltas = {
+            side: "".join(
+                event["text"]
+                for event in events
+                if event["type"] == "delta" and event["side"] == side
+            )
+            for side in ("a", "b")
+        }
+        self.assertEqual(deltas["a"], "model-a-think model-a-answer")
+        self.assertEqual(deltas["b"], "model-b-think model-b-answer")
+        completed = {
+            event["side"]: event["stats"]
+            for event in events
+            if event["type"] == "done"
+        }
+        self.assertEqual(set(completed), {"a", "b"})
+        self.assertTrue(all(stats["output_tokens"] == 7 for stats in completed.values()))
+        self.assertTrue(all(stats["token_source"] == "usage" for stats in completed.values()))
+        self.assertTrue(all(stats["ttft_ms"] is not None for stats in completed.values()))
+
+    async def test_rejects_invalid_comparison_before_streaming(self):
+        response = await self.client.post(
+            "/api/compare/stream",
+            json={
+                "models": {
+                    "a": {"base_url": "localhost:8000", "model": "a"},
+                    "b": {"base_url": "http://localhost:8001", "model": "b"},
+                },
+                "prompt": "hello",
+            },
+        )
+        self.assertEqual(response.status, 400)
+        payload = await response.json()
+        self.assertIn("must use http or https", payload["error"])
 
     async def test_rejects_unpaired_concurrency_and_prompt_counts(self):
         response = await self.client.post(

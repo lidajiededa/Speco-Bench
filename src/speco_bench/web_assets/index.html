@@ -16,13 +16,31 @@
           <p>性能测试控制台</p>
         </div>
       </div>
+      <nav class="app-mode-tabs" role="tablist" aria-label="工作区">
+        <button
+          class="app-mode-tab active"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="benchmarkWorkspace"
+          data-workspace-target="benchmark"
+        >性能压测</button>
+        <button
+          class="app-mode-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="compareWorkspace"
+          data-workspace-target="compare"
+        >流式对比</button>
+      </nav>
       <div class="server-state" id="serverState">
         <span class="state-dot"></span>
         <span>正在连接</span>
       </div>
     </header>
 
-    <main class="workspace">
+    <main class="workspace" id="benchmarkWorkspace">
       <aside class="control-panel">
         <form id="benchmarkForm">
           <section class="form-section">
@@ -541,6 +559,146 @@
       </section>
     </main>
 
+    <main class="compare-workspace" id="compareWorkspace" hidden>
+      <section class="compare-config-panel">
+        <form id="compareForm">
+          <div class="compare-title-row">
+            <div>
+              <p class="eyebrow">双路实时请求</p>
+              <h2>双模型流式输出对比</h2>
+            </div>
+            <span class="compare-run-state" id="compareRunState">待启动</span>
+          </div>
+
+          <div class="compare-model-grid">
+            <fieldset class="compare-model-config model-a">
+              <legend><span>A</span> 模型 A</legend>
+              <label class="field">
+                <span>Base URL</span>
+                <input id="compareBaseUrlA" type="url" value="http://127.0.0.1:8000" required>
+              </label>
+              <label class="field">
+                <span>服务模型名</span>
+                <input id="compareModelA" type="text" placeholder="例如 qwen3-8b" required>
+              </label>
+              <label class="field">
+                <span>API Key（可选）</span>
+                <input id="compareApiKeyA" type="password" autocomplete="off" placeholder="仅用于本次请求">
+              </label>
+            </fieldset>
+
+            <fieldset class="compare-model-config model-b">
+              <legend><span>B</span> 模型 B</legend>
+              <label class="field">
+                <span>Base URL</span>
+                <input id="compareBaseUrlB" type="url" value="http://127.0.0.1:8001" required>
+              </label>
+              <label class="field">
+                <span>服务模型名</span>
+                <input id="compareModelB" type="text" placeholder="例如 qwen3-8b-spec" required>
+              </label>
+              <label class="field">
+                <span>API Key（可选）</span>
+                <input id="compareApiKeyB" type="password" autocomplete="off" placeholder="仅用于本次请求">
+              </label>
+            </fieldset>
+          </div>
+
+          <div class="compare-generation-grid">
+            <label class="field">
+              <span>最大输出 Token</span>
+              <input id="compareMaxTokens" type="number" min="1" value="1024" required>
+            </label>
+            <label class="field">
+              <span>Temperature</span>
+              <input id="compareTemperature" type="number" min="0" step="0.1" value="0.7" required>
+            </label>
+            <label class="field">
+              <span>Top P</span>
+              <input id="compareTopP" type="number" min="0.01" max="1" step="0.01" value="1" required>
+            </label>
+            <label class="toggle-field compare-ignore-eos">
+              <span>忽略 EOS</span>
+              <input id="compareIgnoreEos" type="checkbox">
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <label class="field compare-prompt-field">
+            <span>Prompt</span>
+            <textarea id="comparePrompt" rows="6" required>请用简洁清晰的语言解释投机解码的工作原理，并说明它为什么能提升大语言模型的推理速度。</textarea>
+          </label>
+
+          <details class="compare-advanced">
+            <summary>高级请求参数</summary>
+            <div class="compare-advanced-fields">
+              <label class="field">
+                <span>Extra Body（JSON）</span>
+                <textarea id="compareExtraBody" rows="4" spellcheck="false">{}</textarea>
+              </label>
+              <label class="field">
+                <span>超时时间（秒）</span>
+                <input id="compareTimeout" type="number" min="1" value="3600">
+              </label>
+            </div>
+          </details>
+
+          <div class="compare-actions">
+            <button class="primary-button" id="compareStartButton" type="submit">
+              <span aria-hidden="true">▶</span>
+              同时开始
+            </button>
+            <button class="danger-button" id="compareStopButton" type="button" disabled>
+              <span aria-hidden="true">■</span>
+              停止
+            </button>
+            <span class="form-error" id="compareFormError" role="alert"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="compare-results" aria-label="模型输出对比">
+        <article class="compare-output model-a-output" data-compare-side="a">
+          <header class="compare-output-header">
+            <div>
+              <p class="eyebrow">MODEL A</p>
+              <h3 id="compareOutputNameA">模型 A</h3>
+            </div>
+            <span class="compare-status idle" id="compareStatusA">等待</span>
+          </header>
+          <dl class="compare-metrics">
+            <div><dt>TTFT</dt><dd id="compareTtftA">--</dd></div>
+            <div><dt>TPOT</dt><dd id="compareTpotA">--</dd></div>
+            <div><dt>E2E</dt><dd id="compareE2eA">--</dd></div>
+            <div><dt>解码吞吐</dt><dd id="compareDecodeRateA">--</dd></div>
+          </dl>
+          <div class="compare-output-meta" id="compareMetaA">Token -- · 字符 -- · 数据块 --</div>
+          <pre class="compare-stream-text" id="compareTextA">流式输出将在这里显示</pre>
+          <div class="compare-side-error" id="compareErrorA" role="alert"></div>
+        </article>
+
+        <article class="compare-output model-b-output" data-compare-side="b">
+          <header class="compare-output-header">
+            <div>
+              <p class="eyebrow">MODEL B</p>
+              <h3 id="compareOutputNameB">模型 B</h3>
+            </div>
+            <span class="compare-status idle" id="compareStatusB">等待</span>
+          </header>
+          <dl class="compare-metrics">
+            <div><dt>TTFT</dt><dd id="compareTtftB">--</dd></div>
+            <div><dt>TPOT</dt><dd id="compareTpotB">--</dd></div>
+            <div><dt>E2E</dt><dd id="compareE2eB">--</dd></div>
+            <div><dt>解码吞吐</dt><dd id="compareDecodeRateB">--</dd></div>
+          </dl>
+          <div class="compare-output-meta" id="compareMetaB">Token -- · 字符 -- · 数据块 --</div>
+          <pre class="compare-stream-text" id="compareTextB">流式输出将在这里显示</pre>
+          <div class="compare-side-error" id="compareErrorB" role="alert"></div>
+        </article>
+      </section>
+    </main>
+
     <script src="/assets/app.js" defer></script>
+    <script src="/assets/compare.js" defer></script>
   </body>
 </html>
